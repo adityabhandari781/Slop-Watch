@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slop Watch</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup">
+    <header class="popup__header">
+      <h1 class="popup__title">🤖 Slop Watch</h1>
+      <p class="popup__subtitle">AI content detector</p>
+    </header>
+
+    <div class="popup__section popup__section--toggle">
+      <label class="toggle" id="master-toggle-label">
+        <input type="checkbox" id="master-toggle" checked />
+        <span class="toggle__slider"></span>
+        <span class="toggle__text">Enabled</span>
+      </label>
+    </div>
+
+    <div class="popup__controls" id="controls">
+      <!-- Hide AI Videos -->
+      <div class="popup__section">
+        <label class="checkbox-row" id="hide-videos-label">
+          <input type="checkbox" id="hide-videos" />
+          <span class="checkbox-row__text">Hide AI videos above</span>
+        </label>
+        <div class="slider-row">
+          <input type="range" id="video-threshold" min="10" max="100" step="5" value="75" class="slider" />
+          <span class="slider-row__value" id="video-threshold-val">75%</span>
+        </div>
+      </div>
+
+      <!-- Hide AI Channels -->
+      <div class="popup__section">
+        <label class="checkbox-row" id="hide-channels-label">
+          <input type="checkbox" id="hide-channels" />
+          <span class="checkbox-row__text">Hide AI channels above</span>
+        </label>
+        <div class="slider-row">
+          <input type="range" id="channel-threshold" min="10" max="100" step="5" value="75" class="slider" />
+          <span class="slider-row__value" id="channel-threshold-val">75%</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="popup__footer">
+      Crowdsourced AI detection
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
