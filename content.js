@@ -293,7 +293,21 @@
 
   function sendMsg(msg) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(msg, resolve);
+      try {
+        if (!chrome.runtime?.id) {
+          resolve(null);
+          return;
+        }
+        chrome.runtime.sendMessage(msg, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+          } else {
+            resolve(response);
+          }
+        });
+      } catch {
+        resolve(null);
+      }
     });
   }
 
@@ -333,29 +347,34 @@
     uploadInfo.insertAdjacentElement("afterend", btn);
   }
 
-  function injectSidebarOverlays() {
-    const sidebar = document.querySelector(
-      "ytd-watch-next-secondary-results-renderer"
-    );
-    if (!sidebar) return;
+  // ▸▸ Universal thumbnail overlays (works on ALL pages) ▸▸▸▸▸
 
-    // Target both classic and modern sidebar renderers
-    const renderers = sidebar.querySelectorAll(
-      `ytd-compact-video-renderer:not(.${INJECTED}), ytd-rich-grid-media:not(.${INJECTED})`
+  function injectAllThumbnailOverlays() {
+    // Find every thumbnail link across the entire page:
+    // - a#thumbnail: classic homepage/channel page thumbnails
+    // - a.yt-lockup-view-model__content-image: modern sidebar & grid thumbnails
+    const allThumbnailLinks = document.querySelectorAll(
+      `a#thumbnail[href*="/watch"]:not(.${INJECTED}),
+       a#thumbnail[href*="/shorts/"]:not(.${INJECTED}),
+       a.ytd-thumbnail[href*="/watch"]:not(.${INJECTED}),
+       a.ytd-thumbnail[href*="/shorts/"]:not(.${INJECTED}),
+       a.yt-lockup-view-model__content-image[href*="/watch"]:not(.${INJECTED}),
+       a.yt-lockup-view-model__content-image[href*="/shorts/"]:not(.${INJECTED})`
     );
-    renderers.forEach((renderer) => {
-      renderer.classList.add(INJECTED);
 
-      // Find the thumbnail anchor
-      const anchor = renderer.querySelector("a#thumbnail, a.yt-simple-endpoint[href*='/watch']")
-        || renderer.querySelector("a[href*='/watch']");
-      if (!anchor) return;
+    allThumbnailLinks.forEach((anchor) => {
+      anchor.classList.add(INJECTED);
 
       const videoId = getVideoIdFromUrl(anchor.href);
       if (!videoId) return;
 
-      // Find the actual thumbnail element to overlay on
-      const thumbEl = renderer.querySelector("ytd-thumbnail, yt-thumbnail-view-model") || anchor;
+      // Use the thumbnail container element for positioning,
+      // falling back to the anchor itself
+      const thumbEl =
+        anchor.querySelector("yt-thumbnail-view-model, ytd-thumbnail, yt-image") ||
+        anchor.closest("yt-thumbnail-view-model, ytd-thumbnail") ||
+        anchor;
+
       thumbEl.style.position = "relative";
       thumbEl.style.overflow = "visible";
 
@@ -364,35 +383,6 @@
           if (!resp?.success) return;
           const overlay = createOverlay(resp.score);
           thumbEl.appendChild(overlay);
-        }
-      );
-    });
-  }
-
-  // ▸▸ Homepage / Browse ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
-
-  function injectHomepageOverlays() {
-    const thumbs = document.querySelectorAll(
-      `ytd-rich-item-renderer:not(.${INJECTED}) #thumbnail`
-    );
-
-    thumbs.forEach((anchor) => {
-      const renderer = anchor.closest("ytd-rich-item-renderer");
-      if (!renderer) return;
-      renderer.classList.add(INJECTED);
-
-      const videoId = getVideoIdFromUrl(anchor.href || "");
-      if (!videoId) return;
-
-      const thumbContainer =
-        anchor.querySelector("yt-image") || anchor;
-      thumbContainer.style.position = "relative";
-
-      sendMsg({ action: "getScore", type: "video", entityId: videoId }).then(
-        (resp) => {
-          if (!resp?.success) return;
-          const overlay = createOverlay(resp.score);
-          thumbContainer.appendChild(overlay);
 
           // Apply blur/hide
           const pct = scorePct(resp.score);
@@ -401,7 +391,10 @@
             pct !== null &&
             pct >= settings.hideVideoThreshold
           ) {
-            renderer.classList.add("slop-hidden");
+            const renderer = anchor.closest(
+              "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model"
+            );
+            if (renderer) renderer.classList.add("slop-hidden");
           }
         }
       );
@@ -425,21 +418,45 @@
   }
 
   function injectShortsChannelButton() {
-    const channelEl = document.querySelector(
-      "ytd-reel-player-overlay-renderer #channel-name"
+    // Modern shorts layout: yt-reel-channel-bar-view-model
+    const channelBars = document.querySelectorAll(
+      `yt-reel-channel-bar-view-model:not(.${INJECTED})`
     );
-    if (!channelEl || channelEl.classList.contains(INJECTED)) return;
 
-    // Extract handle from channel link
-    const link = channelEl.querySelector("a[href]");
-    if (!link) return;
-    const m = link.href.match(/\/@([^/?]+)/);
-    if (!m) return;
-    const handle = m[1];
+    channelBars.forEach((bar) => {
+      bar.classList.add(INJECTED);
 
-    channelEl.classList.add(INJECTED);
-    const btn = createButton("channel", handle, "slop-btn--shorts-channel");
-    channelEl.parentElement.insertBefore(btn, channelEl.nextSibling);
+      // Channel name is a span with class ytReelChannelBarViewModelChannelName
+      const nameSpan = bar.querySelector(
+        "span.ytReelChannelBarViewModelChannelName"
+      );
+      if (!nameSpan) return;
+
+      const link = nameSpan.querySelector("a[href]");
+      if (!link) return;
+      const m = link.href.match(/\/@([^/?]+)/);
+      if (!m) return;
+      const handle = m[1];
+
+      const btn = createButton("channel", handle, "slop-btn--shorts-channel");
+      nameSpan.insertAdjacentElement("afterend", btn);
+    });
+
+    // Fallback: legacy shorts layout
+    const legacyChannelEl = document.querySelector(
+      `ytd-reel-player-overlay-renderer #channel-name:not(.${INJECTED})`
+    );
+    if (legacyChannelEl) {
+      legacyChannelEl.classList.add(INJECTED);
+      const link = legacyChannelEl.querySelector("a[href]");
+      if (link) {
+        const m = link.href.match(/\/@([^/?]+)/);
+        if (m) {
+          const btn = createButton("channel", m[1], "slop-btn--shorts-channel");
+          legacyChannelEl.parentElement.insertBefore(btn, legacyChannelEl.nextSibling);
+        }
+      }
+    }
   }
 
   // ▸▸ Channel page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
@@ -470,7 +487,6 @@
     if (path === "/watch") {
       injectWatchVideoButton();
       injectWatchChannelButton();
-      injectSidebarOverlays();
     }
 
     if (path.startsWith("/shorts/")) {
@@ -482,8 +498,8 @@
       injectChannelPageButton();
     }
 
-    // Homepage overlays run everywhere that could have thumbnails
-    injectHomepageOverlays();
+    // Universal thumbnail overlays — runs on EVERY page
+    injectAllThumbnailOverlays();
   }
 
   // ── MUTATION OBSERVER (YouTube SPA) ────────────────────────
