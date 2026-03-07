@@ -219,6 +219,14 @@ body {
   transition: opacity 0.3s, filter 0.3s;
 }
 
+/* ── Per-slider disabled (checkbox unchecked) ──────────────── */
+.slider-row--disabled {
+  opacity: 0.3;
+  pointer-events: none;
+  filter: grayscale(0.6);
+  transition: opacity 0.25s, filter 0.25s;
+}
+
 /* ── Footer ────────────────────────────────────────────────── */
 .popup__footer {
   text-align: center;

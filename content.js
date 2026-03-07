@@ -302,29 +302,35 @@
   // ▸▸ Watch page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
 
   function injectWatchVideoButton() {
-    const titleEl = document.querySelector(
+    const titleH1 = document.querySelector(
       "ytd-watch-metadata #title h1"
     );
-    if (!titleEl || titleEl.classList.contains(INJECTED)) return;
+    if (!titleH1 || titleH1.classList.contains(INJECTED)) return;
     const videoId = getCurrentVideoId();
     if (!videoId) return;
 
-    titleEl.classList.add(INJECTED);
+    titleH1.classList.add(INJECTED);
+    titleH1.style.display = "flex";
+    titleH1.style.alignItems = "center";
     const btn = createButton("video", videoId, "slop-btn--video-title");
-    titleEl.parentElement.insertBefore(btn, titleEl.nextSibling);
+    // Append inside the h1, after the yt-formatted-string
+    titleH1.appendChild(btn);
   }
 
   function injectWatchChannelButton() {
-    const channelNameEl = document.querySelector(
-      "ytd-watch-metadata #owner ytd-channel-name #channel-name"
+    const ownerRenderer = document.querySelector(
+      "ytd-watch-metadata ytd-video-owner-renderer"
     );
-    if (!channelNameEl || channelNameEl.classList.contains(INJECTED)) return;
+    if (!ownerRenderer || ownerRenderer.classList.contains(INJECTED)) return;
+    const uploadInfo = ownerRenderer.querySelector("#upload-info");
+    if (!uploadInfo) return;
     const handle = getChannelHandle();
     if (!handle) return;
 
-    channelNameEl.classList.add(INJECTED);
+    ownerRenderer.classList.add(INJECTED);
     const btn = createButton("channel", handle, "slop-btn--channel-watch");
-    channelNameEl.parentElement.insertBefore(btn, channelNameEl.nextSibling);
+    // Insert after #upload-info, inside ytd-video-owner-renderer
+    uploadInfo.insertAdjacentElement("afterend", btn);
   }
 
   function injectSidebarOverlays() {
@@ -333,26 +339,31 @@
     );
     if (!sidebar) return;
 
-    const thumbs = sidebar.querySelectorAll(
-      `ytd-compact-video-renderer:not(.${INJECTED}) a#thumbnail`
+    // Target both classic and modern sidebar renderers
+    const renderers = sidebar.querySelectorAll(
+      `ytd-compact-video-renderer:not(.${INJECTED}), ytd-rich-grid-media:not(.${INJECTED})`
     );
-    thumbs.forEach((anchor) => {
-      const renderer = anchor.closest("ytd-compact-video-renderer");
-      if (!renderer) return;
+    renderers.forEach((renderer) => {
       renderer.classList.add(INJECTED);
+
+      // Find the thumbnail anchor
+      const anchor = renderer.querySelector("a#thumbnail, a.yt-simple-endpoint[href*='/watch']")
+        || renderer.querySelector("a[href*='/watch']");
+      if (!anchor) return;
 
       const videoId = getVideoIdFromUrl(anchor.href);
       if (!videoId) return;
 
-      const imgContainer = anchor.querySelector("yt-image, ytd-thumbnail");
-      const target = imgContainer || anchor;
-      target.style.position = "relative";
+      // Find the actual thumbnail element to overlay on
+      const thumbEl = renderer.querySelector("ytd-thumbnail, yt-thumbnail-view-model") || anchor;
+      thumbEl.style.position = "relative";
+      thumbEl.style.overflow = "visible";
 
       sendMsg({ action: "getScore", type: "video", entityId: videoId }).then(
         (resp) => {
           if (!resp?.success) return;
           const overlay = createOverlay(resp.score);
-          target.appendChild(overlay);
+          thumbEl.appendChild(overlay);
         }
       );
     });
@@ -434,16 +445,19 @@
   // ▸▸ Channel page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
 
   function injectChannelPageButton() {
-    const headerMeta = document.querySelector(
-      "yt-content-metadata-view-model"
+    // Target the h1 inside the channel page header
+    const h1 = document.querySelector(
+      "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1"
     );
-    if (!headerMeta || headerMeta.classList.contains(INJECTED)) return;
+    if (!h1 || h1.classList.contains(INJECTED)) return;
     const handle = getChannelHandleFromPage();
     if (!handle) return;
 
-    headerMeta.classList.add(INJECTED);
+    h1.classList.add(INJECTED);
+    h1.style.display = "flex";
+    h1.style.alignItems = "center";
     const btn = createButton("channel", handle, "slop-btn--channel-page");
-    headerMeta.parentElement.insertBefore(btn, headerMeta.nextSibling);
+    h1.appendChild(btn);
   }
 
   // ── MASTER INJECTOR ────────────────────────────────────────

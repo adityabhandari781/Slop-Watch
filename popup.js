@@ -57,11 +57,20 @@ function applyToUI(s) {
   els.channelThreshold.value = s.hideChannelThreshold;
   els.channelThresholdVal.textContent = s.hideChannelThreshold + "%";
   updateDisabledState(s.enabled);
+  updateSliderStates();
 }
 
 function updateDisabledState(enabled) {
   els.controls.classList.toggle("popup__controls--disabled", !enabled);
   els.toggleText.textContent = enabled ? "Enabled" : "Disabled";
+  if (enabled) updateSliderStates();
+}
+
+function updateSliderStates() {
+  const videoSliderRow = els.videoThreshold.closest(".slider-row");
+  const channelSliderRow = els.channelThreshold.closest(".slider-row");
+  videoSliderRow.classList.toggle("slider-row--disabled", !els.hideVideos.checked);
+  channelSliderRow.classList.toggle("slider-row--disabled", !els.hideChannels.checked);
 }
 
 function save() {
@@ -73,5 +82,6 @@ function save() {
     hideChannelThreshold: parseInt(els.channelThreshold.value, 10),
   };
   updateDisabledState(s.enabled);
+  updateSliderStates();
   chrome.storage.local.set({ slopwatch_settings: s });
 }
