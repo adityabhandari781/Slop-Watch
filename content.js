@@ -423,6 +423,47 @@
     });
   }
 
+  // ▸▸ Playlist channel overlays ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
+
+  function injectPlaylistChannelOverlays() {
+    const items = document.querySelectorAll(
+      `ytd-playlist-video-renderer:not(.${INJECTED}-ch)`
+    );
+
+    items.forEach((item) => {
+      item.classList.add(`${INJECTED}-ch`);
+
+      const formattedString = item.querySelector("ytd-channel-name yt-formatted-string#text");
+      if (!formattedString) return;
+      if (formattedString.querySelector(".slop-channel-overlay")) return;
+      formattedString.style.display = "inline-flex";
+      formattedString.style.alignItems = "center";
+
+      // Extract channel handle or name
+      const link = formattedString.querySelector("a[href]");
+      let handle = null;
+      if (link) {
+        const m = link.href.match(/\/@([^/?]+)/);
+        if (m) {
+          handle = m[1];
+        } else {
+          // Playlist channel links often use /channel/ID
+          handle = link.textContent.trim();
+        }
+      }
+      if (!handle) return;
+
+      sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
+        (resp) => {
+          if (!resp?.success) return;
+          if (formattedString.querySelector(".slop-channel-overlay")) return;
+          const overlay = createChannelOverlay(resp.score);
+          formattedString.appendChild(overlay);
+        }
+      );
+    });
+  }
+
   // ▸▸ Universal thumbnail overlays (works on ALL pages) ▸▸▸▸▸
 
   function injectAllThumbnailOverlays() {
@@ -579,6 +620,7 @@
     // Universal — runs on EVERY page
     injectAllThumbnailOverlays();
     injectChannelOverlays();
+    injectPlaylistChannelOverlays();
   }
 
   // ── MUTATION OBSERVER (YouTube SPA) ────────────────────────
