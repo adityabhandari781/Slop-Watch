@@ -427,7 +427,6 @@
 
   function injectAllThumbnailOverlays() {
     // Find every thumbnail link across the entire page.
-    // Includes classic a#thumbnail, modern lockup-view-model, and shorts-specific anchors.
     const allThumbnailLinks = document.querySelectorAll(
       `a#thumbnail[href*="/watch"]:not(.${INJECTED}),
        a#thumbnail[href*="/shorts/"]:not(.${INJECTED}),
@@ -445,20 +444,23 @@
       const videoId = getVideoIdFromUrl(anchor.href);
       if (!videoId) return;
 
-      // Skip if this anchor already has an overlay (prevents duplicates)
-      if (anchor.querySelector(":scope > .slop-overlay")) return;
+      // Place overlay on the PARENT thumbnail container, NOT the anchor.
+      // This avoids triggering YouTube's ::before aspect-ratio box on a#thumbnail.
+      // ytd-thumbnail and yt-thumbnail-view-model already have position:relative.
+      const host =
+        anchor.closest("ytd-thumbnail") ||
+        anchor.closest("yt-thumbnail-view-model") ||
+        anchor.parentElement;
 
-      // Place overlay directly on the anchor to avoid overflow:hidden
-      // from child containers like yt-image or ytd-thumbnail
-      anchor.style.position = "relative";
+      if (!host || host.querySelector(".slop-overlay")) return;
 
       sendMsg({ action: "getScore", type: "video", entityId: videoId }).then(
         (resp) => {
           if (!resp?.success) return;
-          // Double-check no overlay was added while waiting
-          if (anchor.querySelector(":scope > .slop-overlay")) return;
+          if (host.querySelector(".slop-overlay")) return;
           const overlay = createOverlay(resp.score);
-          anchor.appendChild(overlay);
+          host.style.position = "relative";
+          host.appendChild(overlay);
 
           // Apply blur/hide
           const pct = scorePct(resp.score);

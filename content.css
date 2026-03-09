@@ -11,24 +11,26 @@
   --slop-font: "YouTube Noto", Roboto, Arial, sans-serif;
 }
 
+
+
 /* ── OVERLAY (read-only badge on thumbnails) ───────────────── */
 .slop-overlay {
   position: absolute;
   top: 6px;
   left: 6px;
   z-index: 500;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  padding: 2px 7px;
+  width: fit-content;
+  padding: 2px 8px;
   font-family: var(--slop-font);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.4;
   color: #fff;
   background: var(--slop-color, var(--slop-gray));
-  border-radius: 4px;
+  border-radius: 999px;
   pointer-events: none;
   opacity: 0.92;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
@@ -44,8 +46,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  padding: 1px 6px;
+  width: fit-content;
+  padding: 1px 7px;
   margin-left: 6px;
   font-family: var(--slop-font);
   font-size: 11px;
@@ -53,7 +55,7 @@
   line-height: 1.4;
   color: #fff;
   background: var(--slop-color, var(--slop-gray));
-  border-radius: 3px;
+  border-radius: 999px;
   pointer-events: none;
   opacity: 0.88;
   vertical-align: middle;
