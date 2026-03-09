@@ -141,6 +141,20 @@
   }
 
   /**
+   * Create a read-only channel overlay (for sidebar metadata rows).
+   * Looks like a small inline badge, not clickable.
+   */
+  function createChannelOverlay(score) {
+    const el = document.createElement("span");
+    el.className = "slop-channel-overlay";
+    const pct = scorePct(score);
+    el.style.setProperty("--slop-color", scoreColor(pct));
+    el.textContent = createBadgeText(score);
+    el.title = createTooltip(score);
+    return el;
+  }
+
+  /**
    * Create an interactive button ("Is video AI" / "Is channel AI").
    */
   function createButton(type, entityId, extraClass) {
@@ -254,13 +268,18 @@
 
     popup.append(btnAi, btnHuman, btnClear);
 
-    // Position popup near the button
-    anchorEl.style.position = "relative";
-    anchorEl.appendChild(popup);
+    // Position popup using fixed positioning on document.body
+    // so it's not clipped by overflow:hidden parents like h1
+    document.body.appendChild(popup);
+    const rect = anchorEl.getBoundingClientRect();
+    popup.style.position = "fixed";
+    popup.style.top = `${rect.bottom + 6}px`;
+    popup.style.left = `${rect.left + rect.width / 2}px`;
+    popup.style.transform = "translateX(-50%)";
 
     // Close on click outside
     const closeHandler = (ev) => {
-      if (!popup.contains(ev.target) && ev.target !== anchorEl) {
+      if (!popup.contains(ev.target) && !anchorEl.contains(ev.target)) {
         popup.remove();
         document.removeEventListener("click", closeHandler, true);
       }
@@ -347,19 +366,63 @@
     uploadInfo.insertAdjacentElement("afterend", btn);
   }
 
+  // ▸▸ Sidebar channel overlays (read-only, in metadata row) ▸▸
+
+  function injectSidebarChannelOverlays() {
+    const sidebar = document.querySelector(
+      "ytd-watch-next-secondary-results-renderer"
+    );
+    if (!sidebar) return;
+
+    // Target modern sidebar items (yt-lockup-view-model)
+    const items = sidebar.querySelectorAll(
+      `yt-lockup-view-model:not(.${INJECTED}-ch)`
+    );
+
+    items.forEach((item) => {
+      item.classList.add(`${INJECTED}-ch`);
+
+      // Find the metadata row with views/date
+      const metaRow = item.querySelector(
+        ".yt-content-metadata-view-model__metadata-row"
+      );
+      if (!metaRow) return;
+
+      // Find the channel link to extract handle
+      const channelLink = item.querySelector('a[href*="/@"]');
+      if (!channelLink) return;
+      const m = channelLink.href.match(/\/@([^/?]+)/);
+      if (!m) return;
+      const handle = m[1];
+
+      sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
+        (resp) => {
+          if (!resp?.success) return;
+          const overlay = createChannelOverlay(resp.score);
+          metaRow.appendChild(overlay);
+        }
+      );
+    });
+  }
+
   // ▸▸ Universal thumbnail overlays (works on ALL pages) ▸▸▸▸▸
 
   function injectAllThumbnailOverlays() {
     // Find every thumbnail link across the entire page:
     // - a#thumbnail: classic homepage/channel page thumbnails
     // - a.yt-lockup-view-model__content-image: modern sidebar & grid thumbnails
+    // - a.shortsLockupViewModelHostOutsideMetadata: shorts on homepage
+    // - a[href*="/shorts/"]: any other shorts thumbnail link
     const allThumbnailLinks = document.querySelectorAll(
       `a#thumbnail[href*="/watch"]:not(.${INJECTED}),
        a#thumbnail[href*="/shorts/"]:not(.${INJECTED}),
        a.ytd-thumbnail[href*="/watch"]:not(.${INJECTED}),
        a.ytd-thumbnail[href*="/shorts/"]:not(.${INJECTED}),
        a.yt-lockup-view-model__content-image[href*="/watch"]:not(.${INJECTED}),
-       a.yt-lockup-view-model__content-image[href*="/shorts/"]:not(.${INJECTED})`
+       a.yt-lockup-view-model__content-image[href*="/shorts/"]:not(.${INJECTED}),
+       a.shortsLockupViewModelHostOutsideMetadata[href*="/shorts/"]:not(.${INJECTED}),
+       shortsLockupViewModelHostOutsideMetadata a[href*="/shorts/"]:not(.${INJECTED}),
+       ytd-rich-item-renderer a[href*="/shorts/"]:not(.${INJECTED})`
     );
 
     allThumbnailLinks.forEach((anchor) => {
@@ -487,6 +550,7 @@
     if (path === "/watch") {
       injectWatchVideoButton();
       injectWatchChannelButton();
+      injectSidebarChannelOverlays();
     }
 
     if (path.startsWith("/shorts/")) {

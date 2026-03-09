@@ -39,6 +39,27 @@
   background: var(--slop-red) !important;
 }
 
+/* ── CHANNEL OVERLAY (read-only badge in sidebar metadata) ─── */
+.slop-channel-overlay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-family: var(--slop-font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #fff;
+  background: var(--slop-color, var(--slop-gray));
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: 0.88;
+  vertical-align: middle;
+  letter-spacing: 0.2px;
+}
+
 /* ── BUTTON (interactive: video / channel) ─────────────────── */
 .slop-btn {
   display: inline-flex;
@@ -116,11 +137,7 @@
 
 /* ── VOTING POPUP ──────────────────────────────────────────── */
 .slop-popup {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 9999;
+  z-index: 99998;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -137,11 +154,11 @@
 @keyframes slopPopupIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-4px) scale(0.96);
+    scale: 0.96;
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
+    scale: 1;
   }
 }
 
