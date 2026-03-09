@@ -370,7 +370,6 @@
 
   function injectChannelOverlays() {
     // Find ALL yt-lockup-view-model items across the entire page
-    // (works on sidebar, homepage grid, channel page, search results, etc.)
     const items = document.querySelectorAll(
       `yt-lockup-view-model:not(.${INJECTED}-ch)`
     );
@@ -382,16 +381,33 @@
       const metaRows = item.querySelectorAll(
         ".yt-content-metadata-view-model__metadata-row"
       );
-      // The first metadata row typically has the channel name
       const channelRow = metaRows[0];
       if (!channelRow) return;
 
-      // Find the channel link to extract handle
+      // Try to extract channel handle from a link first (homepage has links)
+      let handle = null;
       const channelLink = item.querySelector('a[href*="/@"]');
-      if (!channelLink) return;
-      const m = channelLink.href.match(/\/@([^/?]+)/);
-      if (!m) return;
-      const handle = m[1];
+      if (channelLink) {
+        const m = channelLink.href.match(/\/@([^/?]+)/);
+        if (m) handle = m[1];
+      }
+
+      // Fallback: extract channel name from the text in the first metadata row
+      // (sidebar renders channel name as plain text spans, not links)
+      if (!handle) {
+        const textSpan = channelRow.querySelector(
+          ".yt-content-metadata-view-model__metadata-text"
+        );
+        if (textSpan) {
+          // Get only the direct text content (channel name), excluding nested badges
+          const cloned = textSpan.cloneNode(true);
+          // Remove nested non-text elements (verified badge icons, etc.)
+          cloned.querySelectorAll(".yt-core-attributed-string--inline-block-mod").forEach(el => el.remove());
+          handle = cloned.textContent.trim();
+        }
+      }
+
+      if (!handle) return;
 
       // Skip if already has a channel overlay
       if (channelRow.querySelector(".slop-channel-overlay")) return;
