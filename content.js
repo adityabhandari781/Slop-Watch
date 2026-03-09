@@ -427,38 +427,44 @@
 
   function injectPlaylistChannelOverlays() {
     const items = document.querySelectorAll(
-      `ytd-playlist-video-renderer:not(.${INJECTED}-ch)`
+      `ytd-playlist-video-renderer:not(.${INJECTED}-ch),
+       ytd-playlist-panel-video-renderer:not(.${INJECTED}-ch)`
     );
 
     items.forEach((item) => {
       item.classList.add(`${INJECTED}-ch`);
 
-      const formattedString = item.querySelector("ytd-channel-name yt-formatted-string#text");
-      if (!formattedString) return;
-      if (formattedString.querySelector(".slop-channel-overlay")) return;
-      formattedString.style.display = "inline-flex";
-      formattedString.style.alignItems = "center";
+      // Try two different structures:
+      // 1. Playlist page: ytd-channel-name yt-formatted-string#text
+      // 2. Playlist panel (while watching): span#byline or #byline-container
+      let target =
+        item.querySelector("ytd-channel-name yt-formatted-string#text") ||
+        item.querySelector("#byline-container #byline") ||
+        item.querySelector("span#byline");
+
+      if (!target) return;
+      if (target.querySelector(".slop-channel-overlay")) return;
+      target.style.display = "inline-flex";
+      target.style.alignItems = "center";
 
       // Extract channel handle or name
-      const link = formattedString.querySelector("a[href]");
       let handle = null;
+      const link = target.querySelector("a[href]");
       if (link) {
         const m = link.href.match(/\/@([^/?]+)/);
-        if (m) {
-          handle = m[1];
-        } else {
-          // Playlist channel links often use /channel/ID
-          handle = link.textContent.trim();
-        }
+        handle = m ? m[1] : link.textContent.trim();
+      } else {
+        // Plain text channel name (common in playlist panel)
+        handle = target.textContent.trim();
       }
       if (!handle) return;
 
       sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
         (resp) => {
           if (!resp?.success) return;
-          if (formattedString.querySelector(".slop-channel-overlay")) return;
+          if (target.querySelector(".slop-channel-overlay")) return;
           const overlay = createChannelOverlay(resp.score);
-          formattedString.appendChild(overlay);
+          target.appendChild(overlay);
         }
       );
     });
