@@ -48,7 +48,7 @@ body {
 .popup__title {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #00ff88, #00bfff);
+  background: #00ff88;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

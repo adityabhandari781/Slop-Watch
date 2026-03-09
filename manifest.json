@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Slop Watch",
   "version": "1.0.0",
-  "description": "Crowdsource whether YouTube videos and channels are AI-generated slop.",
+  "description": "Crowdsourced AI Slop detector for YouTube.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "*://*.youtube.com/*",
