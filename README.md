@@ -1,6 +1,6 @@
 # Slop Watch
 
-![Slop Watch](assets/logo.png)
+![Slop Watch](assets/logo_256.png)
 
 **Slop Watch** is a Chrome extension that acts as a crowdsourced AI "slop" detector for YouTube. It empowers users to vote, identify, and filter out AI-generated low-effort content across YouTube videos and channels.
 

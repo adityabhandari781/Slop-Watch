@@ -22,22 +22,23 @@
     hideChannelThreshold: 75,
   };
 
-  function loadSettings() {
-    chrome.storage.local.get("slopwatch_settings", (data) => {
-      if (data.slopwatch_settings) {
-        settings = { ...settings, ...data.slopwatch_settings };
-      }
-    });
+  function removeSlopElements() {
+    document.querySelectorAll(".slop-overlay, .slop-channel-overlay, .slop-btn, .slop-popup, .slop-toast").forEach(el => el.remove());
+    document.querySelectorAll(`.${INJECTED}`).forEach(el => el.classList.remove(INJECTED));
+    document.querySelectorAll(`.${INJECTED}-ch`).forEach(el => el.classList.remove(`${INJECTED}-ch`));
+    document.querySelectorAll(".slop-hidden").forEach(el => el.classList.remove("slop-hidden"));
   }
 
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.slopwatch_settings) {
       settings = { ...settings, ...changes.slopwatch_settings.newValue };
-      if (settings.enabled) runInjectors();
+      if (settings.enabled) {
+        runInjectors();
+      } else {
+        removeSlopElements();
+      }
     }
   });
-
-  loadSettings();
 
   // ── Helpers ────────────────────────────────────────────────
 
@@ -639,7 +640,6 @@
   }
 
   const observer = new MutationObserver(onMutation);
-  observer.observe(document.body, { childList: true, subtree: true });
 
   // Also listen for YouTube SPA navigations
   document.addEventListener("yt-navigate-finish", () => {
@@ -647,6 +647,16 @@
     setTimeout(runInjectors, 500);
   });
 
-  // Initial run
-  runInjectors();
+  // Initial load
+  chrome.storage.local.get("slopwatch_settings", (data) => {
+    if (data.slopwatch_settings) {
+      settings = { ...settings, ...data.slopwatch_settings };
+    }
+    observer.observe(document.body, { childList: true, subtree: true });
+    if (settings.enabled) {
+      runInjectors();
+    } else {
+      removeSlopElements();
+    }
+  });
 })();
