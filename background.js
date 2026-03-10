@@ -1,18 +1,19 @@
 // ============================================================
-// Slop Watch — Background Service Worker
+// Slop Watch Background Service Worker
 // ============================================================
 // Handles Firebase REST interactions, browser UUID management,
 // and in-memory score caching.
 // ============================================================
 
-// ────────────────────────────────────────────────────────────
-// 🔧  CONFIGURATION — paste your Firebase details here
-// ────────────────────────────────────────────────────────────
-const FIREBASE_DB_URL = "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app/";
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const FIREBASE_DB_URL =
+  "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
-// ────────────────────────────────────────────────────────────
-// 🆔  Browser UUID (persistent per install)
-// ────────────────────────────────────────────────────────────
+// ============================================================
+// Browser UUID (persistent per install)
+// ============================================================
 async function getOrCreateUUID() {
   const data = await chrome.storage.local.get("slopwatch_uuid");
   if (data.slopwatch_uuid) return data.slopwatch_uuid;
@@ -21,9 +22,15 @@ async function getOrCreateUUID() {
   return uuid;
 }
 
-// ────────────────────────────────────────────────────────────
-// 📦  In-memory score cache (TTL = 60 s)
-// ────────────────────────────────────────────────────────────
+// ============================================================
+// In-memory score cache (TTL = 60 s)
+// ============================================================
+/*
+ * We cache scores in memory to avoid redundant Firebase requests during
+ * rapid UI interactions (e.g., rendering thumbnail grids). Cache entries
+ * are automatically invalidated after TTL, and explicit cache clears happen
+ * after vote changes to keep scores fresh.
+ */
 const scoreCache = new Map();
 const CACHE_TTL = 60_000;
 
@@ -45,18 +52,17 @@ function invalidateCache(key) {
   scoreCache.delete(key);
 }
 
-// ────────────────────────────────────────────────────────────
-// 🌐  Firebase helpers
-// ────────────────────────────────────────────────────────────
+// ============================================================
+// Firebase helpers
+// ============================================================
 function firebaseUrl(path) {
   return `${FIREBASE_DB_URL}/${path}.json`;
 }
 
-/**
- * Fetch aggregate score for a video or channel.
- * @param {"video"|"channel"} type
- * @param {string} entityId  — YouTube video ID or channel ID/handle
- * @returns {Promise<{ai: number, total: number}>}
+/*
+ * Fetch aggregate score for a video or channel. Returns cached result if
+ * available; otherwise queries Firebase and populates cache. Does not throw
+ * on network errors to ensure UI remains responsive.
  */
 async function fetchScore(type, entityId) {
   const cacheKey = `${type}:${entityId}`;
@@ -67,7 +73,9 @@ async function fetchScore(type, entityId) {
     const resp = await fetch(firebaseUrl(`aggregates/${type}/${entityId}`));
     if (!resp.ok) return { ai: 0, total: 0 };
     const data = await resp.json();
-    const result = data ? { ai: data.ai || 0, total: data.total || 0 } : { ai: 0, total: 0 };
+    const result = data
+      ? { ai: data.ai || 0, total: data.total || 0 }
+      : { ai: 0, total: 0 };
     setCache(cacheKey, result);
     return result;
   } catch {
@@ -75,9 +83,9 @@ async function fetchScore(type, entityId) {
   }
 }
 
-/**
- * Fetch the current user's existing vote for an entity (if any).
- * @returns {Promise<string|null>}  "ai", "human", or null
+/*
+ * Fetch the current user's existing vote for an entity. Returns null if no
+ * vote exists (first time voting) or on network failure.
  */
 async function fetchMyVote(type, entityId) {
   const uuid = await getOrCreateUUID();
@@ -91,17 +99,21 @@ async function fetchMyVote(type, entityId) {
   }
 }
 
-/**
- * Submit a vote. Handles first-vote and vote-change scenarios.
- * @param {"video"|"channel"} type
- * @param {string} entityId
- * @param {"ai"|"human"} vote
+/*
+ * Submit a vote, handling both first-vote and vote-change scenarios.
+ *
+ * First vote: increments total and optionally increments ai count.
+ * Vote change: updates ai count (increment if switching to ai, decrement if switching away).
+ * Total count remains unchanged when changing votes.
+ *
+ * Uses fetchScoreBypass to read the current aggregate state before mutation,
+ * avoiding race conditions where rapid votes could corrupt the aggregate.
  */
 async function submitVote(type, entityId, vote) {
   const uuid = await getOrCreateUUID();
   const existingVote = await fetchMyVote(type, entityId);
 
-  // If already voted the same way, nothing to do
+  // No-op if user is re-voting the same way
   if (existingVote === vote) return await fetchScore(type, entityId);
 
   // Write the vote
@@ -120,8 +132,9 @@ async function submitVote(type, entityId, vote) {
     aiDelta = vote === "ai" ? 1 : 0;
   } else {
     // Changing vote
-    if (vote === "ai") aiDelta = 1;   // was human → ai
-    else aiDelta = -1;                 // was ai → human
+    if (vote === "ai")
+      aiDelta = 1; // was human, now ai
+    else aiDelta = -1; // was ai, now human
     // total stays the same
   }
 
@@ -142,8 +155,10 @@ async function submitVote(type, entityId, vote) {
   return newScore;
 }
 
-/**
- * Clear the user's vote.
+/*
+ * Clear the user's vote. If the user had voted, decrements both ai (if applicable)
+ * and total. Uses read-before-write via fetchScoreBypass to avoid concurrent
+ * mutation issues.
  */
 async function clearVote(type, entityId) {
   const uuid = await getOrCreateUUID();
@@ -173,21 +188,33 @@ async function clearVote(type, entityId) {
   return newScore;
 }
 
-/** Fetch score bypassing cache (for atomic-ish read-modify-write). */
+/*
+ * Fetch score bypassing cache. Used during read-modify-write operations
+ * (submitVote, clearVote) to ensure we read the latest aggregate state
+ * before applying local mutations. This reduces (though does not eliminate)
+ * the window for concurrent vote conflicts.
+ */
 async function fetchScoreBypass(type, entityId) {
   try {
     const resp = await fetch(firebaseUrl(`aggregates/${type}/${entityId}`));
     if (!resp.ok) return { ai: 0, total: 0 };
     const data = await resp.json();
-    return data ? { ai: data.ai || 0, total: data.total || 0 } : { ai: 0, total: 0 };
+    return data
+      ? { ai: data.ai || 0, total: data.total || 0 }
+      : { ai: 0, total: 0 };
   } catch {
     return { ai: 0, total: 0 };
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// 📨  Message handler from content script / popup
-// ────────────────────────────────────────────────────────────
+// ============================================================
+// Message handler from content script / popup
+// ============================================================
+/*
+ * Background service worker must stay alive to handle async responses.
+ * The return true statement keeps the message channel open until sendResponse
+ * is called inside the async IIFE.
+ */
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {

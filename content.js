@@ -1,5 +1,5 @@
 /* ============================================================
-   Slop Watch — Content Script
+   Slop Watch Content Script
    ============================================================
    Injects AI-slop indicators into YouTube pages:
    - "Is video AI" button (clickable, voteable)
@@ -10,10 +10,17 @@
 (() => {
   "use strict";
 
-  // ── Marker class to avoid duplicate injection ──────────────
+  // ============================================================
+  // MARKER CLASS & SETTINGS
+  // ============================================================
+
+  /*
+   * INJECTED markers prevent duplicate DOM insertion across multiple
+   * mutation cycles. Selectors check for these classes before injecting.
+   */
   const INJECTED = "slop-injected";
 
-  // ── Settings (loaded from storage) ─────────────────────────
+  // Settings loaded from storage and updated via onChanged listener
   let settings = {
     enabled: true,
     hideVideos: false,
@@ -22,13 +29,31 @@
     hideChannelThreshold: 75,
   };
 
+  /*
+   * Remove all Slop Watch DOM elements and their marker classes.
+   * Called when extension is disabled to leave the page clean.
+   */
   function removeSlopElements() {
-    document.querySelectorAll(".slop-overlay, .slop-channel-overlay, .slop-btn, .slop-popup, .slop-toast").forEach(el => el.remove());
-    document.querySelectorAll(`.${INJECTED}`).forEach(el => el.classList.remove(INJECTED));
-    document.querySelectorAll(`.${INJECTED}-ch`).forEach(el => el.classList.remove(`${INJECTED}-ch`));
-    document.querySelectorAll(".slop-hidden").forEach(el => el.classList.remove("slop-hidden"));
+    document
+      .querySelectorAll(
+        ".slop-overlay, .slop-channel-overlay, .slop-btn, .slop-popup, .slop-toast",
+      )
+      .forEach((el) => el.remove());
+    document
+      .querySelectorAll(`.${INJECTED}`)
+      .forEach((el) => el.classList.remove(INJECTED));
+    document
+      .querySelectorAll(`.${INJECTED}-ch`)
+      .forEach((el) => el.classList.remove(`${INJECTED}-ch`));
+    document
+      .querySelectorAll(".slop-hidden")
+      .forEach((el) => el.classList.remove("slop-hidden"));
   }
 
+  /*
+   * Settings storage listener triggers re-injection on toggle or threshold change.
+   * Disabled: clean the page. Enabled: re-run injectors to apply new thresholds.
+   */
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.slopwatch_settings) {
       settings = { ...settings, ...changes.slopwatch_settings.newValue };
@@ -40,14 +65,20 @@
     }
   });
 
-  // ── Helpers ────────────────────────────────────────────────
+  // ============================================================
+  // HELPERS: SIGN-IN & VIDEO/CHANNEL EXTRACTION
+  // ============================================================
 
   function isSignedIntoYT() {
     return !!document.querySelector(
-      "button#avatar-btn, img.ytd-topbar-menu-button-renderer[alt='Avatar image']"
+      "button#avatar-btn, img.ytd-topbar-menu-button-renderer[alt='Avatar image']",
     );
   }
 
+  /*
+   * Extract video ID from any YouTube URL (watch or shorts).
+   * Handles edge cases: malformed URLs, missing params, fallback to pathname.
+   */
   function getVideoIdFromUrl(url) {
     try {
       const u = new URL(url, location.origin);
@@ -68,10 +99,13 @@
     return getVideoIdFromUrl(anchor.href);
   }
 
+  /*
+   * Extract channel handle from watch page metadata.
+   * Looks for the owner section link, falls back to null if not found.
+   */
   function getChannelHandle() {
-    // Watch page: channel link in owner section
     const link = document.querySelector(
-      "ytd-watch-metadata #owner ytd-channel-name a"
+      "ytd-watch-metadata #owner ytd-channel-name a",
     );
     if (link) {
       const m = link.href.match(/\/@([^/?]+)/);
@@ -85,10 +119,13 @@
     return m ? m[1] : null;
   }
 
+  /*
+   * Extract channel handle from thumbnail context (grid/list items).
+   * Walks up to the renderer container and extracts from channel link.
+   */
   function getChannelHandleFromThumb(thumbEl) {
-    // Walk up to the renderer, find channel link
     const renderer = thumbEl.closest(
-      "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer"
+      "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer",
     );
     if (!renderer) return null;
     const link = renderer.querySelector('a[href*="/@"]');
@@ -97,13 +134,23 @@
     return m ? m[1] : null;
   }
 
-  // ── Badge / Button creation ────────────────────────────────
+  // ============================================================
+  // SCORING & COLORING
+  // ============================================================
 
+  /*
+   * Convert raw score to percentage. Returns null if insufficient votes,
+   * which signals "no data" and should render as "?".
+   */
   function scorePct(score) {
     if (score.total < 1) return null; // not enough data
     return Math.round((score.ai / score.total) * 100);
   }
 
+  /*
+   * Color scale: green (low AI %), orange (medium), red (high).
+   * Returns gray if no data (pct === null).
+   */
   function scoreColor(pct) {
     if (pct === null) return "#888";
     if (pct <= 30) return "#4caf50";
@@ -120,8 +167,13 @@
     return `${score.total} vote${score.total !== 1 ? "s" : ""}`;
   }
 
-  /**
-   * Create a read-only overlay badge for thumbnails.
+  // ============================================================
+  // BADGE / BUTTON CREATION
+  // ============================================================
+
+  /*
+   * Create a read-only overlay badge for video thumbnails.
+   * Applies flagged styling if hideVideos is on and threshold exceeded.
    */
   function createOverlay(score) {
     const el = document.createElement("div");
@@ -141,9 +193,9 @@
     return el;
   }
 
-  /**
-   * Create a read-only channel overlay (for sidebar metadata rows).
-   * Looks like a small inline badge, not clickable.
+  /*
+   * Create a small inline channel badge (for metadata rows, channel lists).
+   * Read-only, not clickable. Uses same color scheme as video overlay.
    */
   function createChannelOverlay(score) {
     const el = document.createElement("span");
@@ -155,8 +207,10 @@
     return el;
   }
 
-  /**
-   * Create an interactive button ("Is video AI" / "Is channel AI").
+  /*
+   * Create an interactive button with lazy-loaded score and click-to-vote handler.
+   * Initially shows "?" with loading tooltip. On load, updates badge, color, and tooltip.
+   * Applies flagged styling if channel threshold exceeded (channels only).
    */
   function createButton(type, entityId, extraClass) {
     const container = document.createElement("span");
@@ -172,7 +226,7 @@
     // Tooltip holder
     container.title = "Loading…";
 
-    // Load score
+    // Load score from background script
     sendMsg({ action: "getScore", type, entityId }).then((resp) => {
       if (!resp?.success) return;
       const s = resp.score;
@@ -192,7 +246,7 @@
       }
     });
 
-    // Click handler → show voting popup
+    // Click handler opens voting popup
     container.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -202,8 +256,16 @@
     return container;
   }
 
-  // ── Voting popup ───────────────────────────────────────────
+  // ============================================================
+  // VOTING POPUP
+  // ============================================================
 
+  /*
+   * Show modal voting UI. Requires YouTube sign-in.
+   * Positions popup below the anchor button using absolute positioning
+   * (scrolls with page, not fixed to viewport).
+   * Close-on-outside handler uses capture phase to fire before button clicks.
+   */
   function showVotingPopup(anchorEl, type, entityId) {
     // Remove any existing popup
     document.querySelectorAll(".slop-popup").forEach((p) => p.remove());
@@ -218,17 +280,20 @@
 
     const btnAi = document.createElement("button");
     btnAi.className = "slop-popup__btn slop-popup__btn--ai";
-    btnAi.textContent = "🤖 Mark as AI";
+    btnAi.textContent = "Mark as AI";
 
     const btnHuman = document.createElement("button");
     btnHuman.className = "slop-popup__btn slop-popup__btn--human";
-    btnHuman.textContent = "👤 Mark as Human";
+    btnHuman.textContent = "Mark as Human";
 
     const btnClear = document.createElement("button");
     btnClear.className = "slop-popup__btn slop-popup__btn--clear";
-    btnClear.textContent = "✖ Clear";
+    btnClear.textContent = "Clear";
 
-    // Highlight current vote
+    /*
+     * Load and highlight user's existing vote. Fetch happens async;
+     * if vote exists, button gets active class before user sees popup.
+     */
     sendMsg({ action: "getMyVote", type, entityId }).then((resp) => {
       if (resp?.success && resp.vote) {
         if (resp.vote === "ai") btnAi.classList.add("slop-popup__btn--active");
@@ -270,7 +335,6 @@
     popup.append(btnAi, btnHuman, btnClear);
 
     // Position popup on document.body with absolute positioning
-    // (scrolls with the page, not fixed on screen)
     document.body.appendChild(popup);
     const rect = anchorEl.getBoundingClientRect();
     popup.style.position = "absolute";
@@ -278,7 +342,13 @@
     popup.style.left = `${rect.left + window.scrollX + rect.width / 2}px`;
     popup.style.transform = "translateX(-50%)";
 
-    // Close on click outside
+    /*
+     * Close popup on click outside. Uses capture phase (third arg true)
+     * to fire before event bubbles, ensuring clicks on other elements
+     * are captured before button handlers see them.
+     * setTimeout(0) defers handler attachment to next macrotask,
+     * avoiding immediate closure from the triggering click.
+     */
     const closeHandler = (ev) => {
       if (!popup.contains(ev.target) && !anchorEl.contains(ev.target)) {
         popup.remove();
@@ -288,6 +358,9 @@
     setTimeout(() => document.addEventListener("click", closeHandler, true), 0);
   }
 
+  /*
+   * Update button UI after vote completes. Refreshes badge text, color, and tooltip.
+   */
   function updateButton(btnEl, score) {
     const label = btnEl.querySelector(".slop-btn__label");
     if (!label) return;
@@ -297,6 +370,10 @@
     btnEl.title = createTooltip(score);
   }
 
+  /*
+   * Show ephemeral toast message (e.g., "Sign in to vote").
+   * Reuses existing toast if present, clears visibility after 2.5s.
+   */
   function showToast(message) {
     let toast = document.querySelector(".slop-toast");
     if (!toast) {
@@ -309,8 +386,15 @@
     setTimeout(() => toast.classList.remove("slop-toast--visible"), 2500);
   }
 
-  // ── Message helper ─────────────────────────────────────────
+  // ============================================================
+  // MESSAGE HELPER
+  // ============================================================
 
+  /*
+   * Send message to background script with graceful error handling.
+   * Returns null on extension unload, network error, or missing runtime.
+   * Wrapped in Promise to abstract the callback API.
+   */
   function sendMsg(msg) {
     return new Promise((resolve) => {
       try {
@@ -331,14 +415,16 @@
     });
   }
 
-  // ── PAGE INJECTORS ─────────────────────────────────────────
+  // ============================================================
+  // PAGE INJECTORS
+  // ============================================================
 
-  // ▸▸ Watch page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
-
+  /*
+   * Inject "Is video AI" button into watch page title.
+   * Marks injected to avoid duplicates across mutation cycles.
+   */
   function injectWatchVideoButton() {
-    const titleH1 = document.querySelector(
-      "ytd-watch-metadata #title h1"
-    );
+    const titleH1 = document.querySelector("ytd-watch-metadata #title h1");
     if (!titleH1 || titleH1.classList.contains(INJECTED)) return;
     const videoId = getCurrentVideoId();
     if (!videoId) return;
@@ -347,13 +433,16 @@
     titleH1.style.display = "flex";
     titleH1.style.alignItems = "center";
     const btn = createButton("video", videoId, "slop-btn--video-title");
-    // Append inside the h1, after the yt-formatted-string
     titleH1.appendChild(btn);
   }
 
+  /*
+   * Inject "Is channel AI" button into watch page owner section.
+   * Places button after #upload-info (upload date/subscriber info).
+   */
   function injectWatchChannelButton() {
     const ownerRenderer = document.querySelector(
-      "ytd-watch-metadata ytd-video-owner-renderer"
+      "ytd-watch-metadata ytd-video-owner-renderer",
     );
     if (!ownerRenderer || ownerRenderer.classList.contains(INJECTED)) return;
     const uploadInfo = ownerRenderer.querySelector("#upload-info");
@@ -363,29 +452,34 @@
 
     ownerRenderer.classList.add(INJECTED);
     const btn = createButton("channel", handle, "slop-btn--channel-watch");
-    // Insert after #upload-info, inside ytd-video-owner-renderer
     uploadInfo.insertAdjacentElement("afterend", btn);
   }
 
-  // ▸▸ Channel overlays (read-only badge in metadata rows, universal) ▸▸
-
+  /*
+   * Inject small channel badges into yt-lockup-view-model items
+   * (feed items, search results, playlists). Appears in the first
+   * metadata row alongside channel name. Handles both link-based
+   * (homepage) and text-based (sidebar) channel name extraction.
+   */
   function injectChannelOverlays() {
-    // Find ALL yt-lockup-view-model items across the entire page
     const items = document.querySelectorAll(
-      `yt-lockup-view-model:not(.${INJECTED}-ch)`
+      `yt-lockup-view-model:not(.${INJECTED}-ch)`,
     );
 
     items.forEach((item) => {
       item.classList.add(`${INJECTED}-ch`);
 
-      // Find the first metadata row (contains channel name)
       const metaRows = item.querySelectorAll(
-        ".yt-content-metadata-view-model__metadata-row"
+        ".yt-content-metadata-view-model__metadata-row",
       );
       const channelRow = metaRows[0];
       if (!channelRow) return;
 
-      // Try to extract channel handle from a link first (homepage has links)
+      /*
+       * Try link first (homepage has proper channel links).
+       * Fallback to text content (sidebar renders plain text).
+       * Clone and strip nested badges to isolate channel name.
+       */
       let handle = null;
       const channelLink = item.querySelector('a[href*="/@"]');
       if (channelLink) {
@@ -393,24 +487,20 @@
         if (m) handle = m[1];
       }
 
-      // Fallback: extract channel name from the text in the first metadata row
-      // (sidebar renders channel name as plain text spans, not links)
       if (!handle) {
         const textSpan = channelRow.querySelector(
-          ".yt-content-metadata-view-model__metadata-text"
+          ".yt-content-metadata-view-model__metadata-text",
         );
         if (textSpan) {
-          // Get only the direct text content (channel name), excluding nested badges
           const cloned = textSpan.cloneNode(true);
-          // Remove nested non-text elements (verified badge icons, etc.)
-          cloned.querySelectorAll(".yt-core-attributed-string--inline-block-mod").forEach(el => el.remove());
+          cloned
+            .querySelectorAll(".yt-core-attributed-string--inline-block-mod")
+            .forEach((el) => el.remove());
           handle = cloned.textContent.trim();
         }
       }
 
       if (!handle) return;
-
-      // Skip if already has a channel overlay
       if (channelRow.querySelector(".slop-channel-overlay")) return;
 
       sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
@@ -419,25 +509,27 @@
           if (channelRow.querySelector(".slop-channel-overlay")) return;
           const overlay = createChannelOverlay(resp.score);
           channelRow.appendChild(overlay);
-        }
+        },
       );
     });
   }
 
-  // ▸▸ Playlist channel overlays ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
-
+  /*
+   * Inject channel badges into playlist video items.
+   * Handles both modern playlist page (ytd-playlist-video-renderer)
+   * and playlist panel sidebar (ytd-playlist-panel-video-renderer).
+   * Targets different selectors per layout; extracts handle from link or text.
+   */
   function injectPlaylistChannelOverlays() {
     const items = document.querySelectorAll(
       `ytd-playlist-video-renderer:not(.${INJECTED}-ch),
-       ytd-playlist-panel-video-renderer:not(.${INJECTED}-ch)`
+       ytd-playlist-panel-video-renderer:not(.${INJECTED}-ch)`,
     );
 
     items.forEach((item) => {
       item.classList.add(`${INJECTED}-ch`);
 
-      // Try two different structures:
-      // 1. Playlist page: ytd-channel-name yt-formatted-string#text
-      // 2. Playlist panel (while watching): span#byline or #byline-container
+      // Try two different DOM structures (page vs. sidebar)
       let target =
         item.querySelector("ytd-channel-name yt-formatted-string#text") ||
         item.querySelector("#byline-container #byline") ||
@@ -466,15 +558,20 @@
           if (target.querySelector(".slop-channel-overlay")) return;
           const overlay = createChannelOverlay(resp.score);
           target.appendChild(overlay);
-        }
+        },
       );
     });
   }
 
-  // ▸▸ Universal thumbnail overlays (works on ALL pages) ▸▸▸▸▸
-
+  /*
+   * Inject overlays on video thumbnails across all page types.
+   * Uses multiple selectors to catch feeds, search, recommendations, etc.
+   * Critical: append overlay to thumbnail CONTAINER (ytd-thumbnail, yt-thumbnail-view-model),
+   * not the anchor. This avoids triggering YouTube's ::before aspect-ratio pseudo-element
+   * which can break layout.
+   * Applies blur/hide class to renderer parent if hideVideos threshold exceeded.
+   */
   function injectAllThumbnailOverlays() {
-    // Find every thumbnail link across the entire page.
     const allThumbnailLinks = document.querySelectorAll(
       `a#thumbnail[href*="/watch"]:not(.${INJECTED}),
        a#thumbnail[href*="/shorts/"]:not(.${INJECTED}),
@@ -483,7 +580,7 @@
        a.yt-lockup-view-model__content-image[href*="/watch"]:not(.${INJECTED}),
        a.yt-lockup-view-model__content-image[href*="/shorts/"]:not(.${INJECTED}),
        a.reel-item-endpoint[href*="/shorts/"]:not(.${INJECTED}),
-       a.shortsLockupViewModelHostEndpoint.reel-item-endpoint[href*="/shorts/"]:not(.${INJECTED})`
+       a.shortsLockupViewModelHostEndpoint.reel-item-endpoint[href*="/shorts/"]:not(.${INJECTED})`,
     );
 
     allThumbnailLinks.forEach((anchor) => {
@@ -492,9 +589,11 @@
       const videoId = getVideoIdFromUrl(anchor.href);
       if (!videoId) return;
 
-      // Place overlay on the PARENT thumbnail container, NOT the anchor.
-      // This avoids triggering YouTube's ::before aspect-ratio box on a#thumbnail.
-      // ytd-thumbnail and yt-thumbnail-view-model already have position:relative.
+      /*
+       * Place overlay on thumbnail CONTAINER, not anchor.
+       * ytd-thumbnail and yt-thumbnail-view-model have position:relative;
+       * parentElement is fallback for custom layouts.
+       */
       const host =
         anchor.closest("ytd-thumbnail") ||
         anchor.closest("yt-thumbnail-view-model") ||
@@ -510,7 +609,7 @@
           host.style.position = "relative";
           host.appendChild(overlay);
 
-          // Apply blur/hide
+          // Apply blur/hide if threshold exceeded
           const pct = scorePct(resp.score);
           if (
             settings.hideVideos &&
@@ -518,21 +617,22 @@
             pct >= settings.hideVideoThreshold
           ) {
             const renderer = anchor.closest(
-              "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model"
+              "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model",
             );
             if (renderer) renderer.classList.add("slop-hidden");
           }
-        }
+        },
       );
     });
   }
 
-  // ▸▸ Shorts page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
-
+  /*
+   * Inject "Is video AI" button into shorts player actions panel.
+   * Located below/alongside other action buttons (like, comment, share).
+   */
   function injectShortsVideoButton() {
-    // Find the actions panel in the shorts player
     const actionsEl = document.querySelector(
-      "ytd-reel-player-overlay-renderer #actions"
+      "ytd-reel-player-overlay-renderer #actions",
     );
     if (!actionsEl || actionsEl.classList.contains(INJECTED)) return;
     const videoId = getCurrentVideoId();
@@ -543,18 +643,22 @@
     actionsEl.insertBefore(btn, actionsEl.firstChild);
   }
 
+  /*
+   * Inject "Is channel AI" button into shorts channel bar.
+   * Handles modern layout (yt-reel-channel-bar-view-model with ytReelChannelBarViewModelChannelName).
+   * Fallback for legacy layout (ytd-reel-player-overlay-renderer #channel-name).
+   */
   function injectShortsChannelButton() {
-    // Modern shorts layout: yt-reel-channel-bar-view-model
+    // Modern shorts layout
     const channelBars = document.querySelectorAll(
-      `yt-reel-channel-bar-view-model:not(.${INJECTED})`
+      `yt-reel-channel-bar-view-model:not(.${INJECTED})`,
     );
 
     channelBars.forEach((bar) => {
       bar.classList.add(INJECTED);
 
-      // Channel name is a span with class ytReelChannelBarViewModelChannelName
       const nameSpan = bar.querySelector(
-        "span.ytReelChannelBarViewModelChannelName"
+        "span.ytReelChannelBarViewModelChannelName",
       );
       if (!nameSpan) return;
 
@@ -570,7 +674,7 @@
 
     // Fallback: legacy shorts layout
     const legacyChannelEl = document.querySelector(
-      `ytd-reel-player-overlay-renderer #channel-name:not(.${INJECTED})`
+      `ytd-reel-player-overlay-renderer #channel-name:not(.${INJECTED})`,
     );
     if (legacyChannelEl) {
       legacyChannelEl.classList.add(INJECTED);
@@ -579,18 +683,22 @@
         const m = link.href.match(/\/@([^/?]+)/);
         if (m) {
           const btn = createButton("channel", m[1], "slop-btn--shorts-channel");
-          legacyChannelEl.parentElement.insertBefore(btn, legacyChannelEl.nextSibling);
+          legacyChannelEl.parentElement.insertBefore(
+            btn,
+            legacyChannelEl.nextSibling,
+          );
         }
       }
     }
   }
 
-  // ▸▸ Channel page ▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸▸
-
+  /*
+   * Inject "Is channel AI" button into channel page header.
+   * Targets h1 heading in modern and legacy YouTube layouts.
+   */
   function injectChannelPageButton() {
-    // Target the h1 inside the channel page header
     const h1 = document.querySelector(
-      "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1"
+      "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1",
     );
     if (!h1 || h1.classList.contains(INJECTED)) return;
     const handle = getChannelHandleFromPage();
@@ -603,8 +711,16 @@
     h1.appendChild(btn);
   }
 
-  // ── MASTER INJECTOR ────────────────────────────────────────
+  // ============================================================
+  // MASTER INJECTOR
+  // ============================================================
 
+  /*
+   * Route injections based on current page type.
+   * Watch and shorts: page-specific buttons.
+   * Channel page: channel button.
+   * All pages: universal thumbnail and metadata overlays.
+   */
   function runInjectors() {
     if (!settings.enabled) return;
 
@@ -624,14 +740,21 @@
       injectChannelPageButton();
     }
 
-    // Universal — runs on EVERY page
+    // Universal
     injectAllThumbnailOverlays();
     injectChannelOverlays();
     injectPlaylistChannelOverlays();
   }
 
-  // ── MUTATION OBSERVER (YouTube SPA) ────────────────────────
+  // ============================================================
+  // MUTATION OBSERVER & SPA NAVIGATION
+  // ============================================================
 
+  /*
+   * Debounce mutation handler to avoid thrashing on batch DOM changes.
+   * YouTube pushes many mutations per navigation; debounce coalesces them.
+   * 300ms delay balances responsiveness (feel snappy) with efficiency (avoid redundant runs).
+   */
   let debounceTimer = null;
 
   function onMutation() {
@@ -641,13 +764,23 @@
 
   const observer = new MutationObserver(onMutation);
 
-  // Also listen for YouTube SPA navigations
+  /*
+   * YouTube is a SPA that emits yt-navigate-finish on route change.
+   * Listen for this to re-inject on page transitions (watch > shorts, etc.).
+   * 500ms delay allows DOM to fully settle after navigation before re-running injectors.
+   */
   document.addEventListener("yt-navigate-finish", () => {
-    // Small delay for DOM to settle after navigation
     setTimeout(runInjectors, 500);
   });
 
-  // Initial load
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
+
+  /*
+   * Load settings, start observer, and run initial injection.
+   * Observer runs continuously to catch new items in feeds/playlists.
+   */
   chrome.storage.local.get("slopwatch_settings", (data) => {
     if (data.slopwatch_settings) {
       settings = { ...settings, ...data.slopwatch_settings };
