@@ -211,6 +211,85 @@ body {
   text-align: right;
 }
 
+/* ── Advanced Options ──────────────────────────────────────── */
+.popup__section--advanced {
+  margin-top: 4px;
+  margin-bottom: 14px;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #888;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.advanced-toggle:hover {
+  color: #bbb;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.advanced-toggle__icon {
+  transition: transform 0.25s ease;
+}
+
+.advanced-toggle--open .advanced-toggle__icon {
+  transform: rotate(180deg);
+}
+
+.advanced-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, margin-top 0.3s ease;
+  margin-top: 0;
+}
+
+.advanced-panel--open {
+  max-height: 200px;
+  margin-top: 8px;
+}
+
+.advanced-panel__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  background: linear-gradient(135deg, rgba(255, 179, 0, 0.1) 0%, rgba(255, 136, 0, 0.08) 100%);
+  border: 1px solid rgba(255, 179, 0, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.advanced-panel__btn:hover {
+  background: linear-gradient(135deg, rgba(255, 179, 0, 0.18) 0%, rgba(255, 136, 0, 0.14) 100%);
+  border-color: rgba(255, 179, 0, 0.3);
+  box-shadow: 0 0 12px rgba(255, 179, 0, 0.1);
+}
+
+.advanced-panel__btn:active {
+  transform: scale(0.98);
+}
+
 /* ── Disabled state ────────────────────────────────────────── */
 .popup__controls--disabled {
   opacity: 0.35;

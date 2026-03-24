@@ -44,6 +44,19 @@ document.addEventListener("DOMContentLoaded", () => {
     els.channelThresholdVal.textContent = els.channelThreshold.value + "%";
   });
   els.channelThreshold.addEventListener("change", save);
+
+  // Advanced Options toggle
+  const advToggle = document.getElementById("advanced-toggle");
+  const advPanel = document.getElementById("advanced-panel");
+  advToggle.addEventListener("click", () => {
+    advToggle.classList.toggle("advanced-toggle--open");
+    advPanel.classList.toggle("advanced-panel--open");
+  });
+
+  // Leaderboard button
+  document.getElementById("leaderboard-btn").addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("leaderboard.html") });
+  });
 });
 
 /*

@@ -122,6 +122,12 @@ async function submitVote(type, entityId, vote) {
     body: JSON.stringify({ vote }),
   });
 
+  // Mirror to user_votes for stats tracking (avoids broad collection reads)
+  await fetch(firebaseUrl(`user_votes/${uuid}/${type}/${entityId}`), {
+    method: "PUT",
+    body: JSON.stringify({ vote }),
+  });
+
   // Calculate aggregate delta
   let aiDelta = 0;
   let totalDelta = 0;
@@ -171,6 +177,11 @@ async function clearVote(type, entityId) {
     method: "DELETE",
   });
 
+  // Remove from user_votes mirror
+  await fetch(firebaseUrl(`user_votes/${uuid}/${type}/${entityId}`), {
+    method: "DELETE",
+  });
+
   // Patch aggregates
   const currentScore = await fetchScoreBypass(type, entityId);
   const newScore = {
@@ -204,6 +215,215 @@ async function fetchScoreBypass(type, entityId) {
       : { ai: 0, total: 0 };
   } catch {
     return { ai: 0, total: 0 };
+  }
+}
+
+// ============================================================
+// User Stats & Leaderboard helpers
+// ============================================================
+
+/*
+ * Check if a vote is "correct" based on current aggregate.
+ * A vote agrees with the majority if:
+ *   vote === "ai"    and  ai/total > 0.5
+ *   vote === "human"  and  ai/total < 0.5
+ * Exactly 50/50 is NOT counted as correct.
+ */
+function isVoteCorrect(vote, aggregate) {
+  if (!aggregate || aggregate.total < 1) return false;
+  const aiPct = aggregate.ai / aggregate.total;
+  if (vote === "ai") return aiPct > 0.5;
+  if (vote === "human") return aiPct < 0.5;
+  return false;
+}
+
+/*
+ * Fetch user stats from Firebase.
+ */
+async function fetchUserStats(uuid) {
+  try {
+    const resp = await fetch(firebaseUrl(`user_stats/${uuid}`));
+    if (!resp.ok) return { totalVotes: 0, correctVotes: 0 };
+    const data = await resp.json();
+    return data
+      ? {
+          totalVotes: data.totalVotes || 0,
+          correctVotes: data.correctVotes || 0,
+        }
+      : { totalVotes: 0, correctVotes: 0 };
+  } catch {
+    return { totalVotes: 0, correctVotes: 0 };
+  }
+}
+
+/*
+ * Write user stats to Firebase.
+ */
+async function writeUserStats(uuid, stats) {
+  // Preserve username field if it exists
+  const existing = await fetchUserStatsRaw(uuid);
+  const merged = { ...existing, ...stats };
+  await fetch(firebaseUrl(`user_stats/${uuid}`), {
+    method: "PUT",
+    body: JSON.stringify(merged),
+  });
+}
+
+async function fetchUserStatsRaw(uuid) {
+  try {
+    const resp = await fetch(firebaseUrl(`user_stats/${uuid}`));
+    if (!resp.ok) return {};
+    const data = await resp.json();
+    return data || {};
+  } catch {
+    return {};
+  }
+}
+
+/*
+ * Recount correct votes for a user using their personal user_votes mirror.
+ * Reads user_votes/{uuid} (accessible without broad collection permissions),
+ * then fetches each aggregate individually to check majority agreement.
+ */
+async function recountCorrectVotes(uuid) {
+  try {
+    const resp = await fetch(firebaseUrl(`user_votes/${uuid}`));
+    if (!resp.ok) return { totalVotes: 0, correctVotes: 0 };
+    const userVotes = await resp.json();
+    if (!userVotes) return { totalVotes: 0, correctVotes: 0 };
+
+    let correctCount = 0;
+    let totalCount = 0;
+
+    const promises = [];
+    for (const type of ["video", "channel"]) {
+      if (!userVotes[type]) continue;
+      for (const [entityId, entry] of Object.entries(userVotes[type])) {
+        if (!entry?.vote) continue;
+        totalCount++;
+        promises.push(
+          fetchScoreBypass(type, entityId).then((aggregate) => {
+            if (isVoteCorrect(entry.vote, aggregate)) correctCount++;
+          }),
+        );
+      }
+    }
+
+    await Promise.all(promises);
+    return { totalVotes: totalCount, correctVotes: correctCount };
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Fetch username for a UUID.
+ */
+async function fetchUsername(uuid) {
+  try {
+    const resp = await fetch(firebaseUrl(`usernames/${uuid}`));
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data?.username || null;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Set username for a UUID. Checks for uniqueness by scanning existing usernames.
+ */
+async function setUsername(uuid, username) {
+  // Check uniqueness
+  try {
+    const resp = await fetch(firebaseUrl("usernames"));
+    if (resp.ok) {
+      const all = await resp.json();
+      if (all) {
+        for (const [existingUuid, entry] of Object.entries(all)) {
+          if (
+            existingUuid !== uuid &&
+            entry.username &&
+            entry.username.toLowerCase() === username.toLowerCase()
+          ) {
+            return { success: false, error: "Username already taken." };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    // Save username in usernames/{uuid}
+    const writeResp = await fetch(firebaseUrl(`usernames/${uuid}`), {
+      method: "PUT",
+      body: JSON.stringify({ username }),
+    });
+    if (!writeResp.ok) {
+      const errBody = await writeResp.text().catch(() => "");
+      return {
+        success: false,
+        error: `Failed to save (${writeResp.status}): ${errBody}`,
+      };
+    }
+
+    // Also save in user_stats for leaderboard convenience
+    const raw = await fetchUserStatsRaw(uuid);
+    raw.username = username;
+    const statsResp = await fetch(firebaseUrl(`user_stats/${uuid}`), {
+      method: "PUT",
+      body: JSON.stringify(raw),
+    });
+    if (!statsResp.ok) {
+      const errBody = await statsResp.text().catch(() => "");
+      return {
+        success: false,
+        error: `Failed to update stats (${statsResp.status}): ${errBody}`,
+      };
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message || "Network error." };
+  }
+}
+
+/*
+ * Fetch full leaderboard: all user_stats entries that have a username,
+ * sorted by correctVotes descending.
+ */
+async function fetchLeaderboard() {
+  try {
+    const resp = await fetch(firebaseUrl("user_stats"));
+    if (!resp.ok) return [];
+    const all = await resp.json();
+    if (!all) return [];
+
+    const entries = [];
+    for (const [uuid, stats] of Object.entries(all)) {
+      if (stats.username) {
+        entries.push({
+          uuid,
+          username: stats.username,
+          correctVotes: stats.correctVotes || 0,
+          totalVotes: stats.totalVotes || 0,
+        });
+      }
+    }
+
+    // Sort by correctVotes desc, then totalVotes desc
+    entries.sort((a, b) => {
+      if (b.correctVotes !== a.correctVotes)
+        return b.correctVotes - a.correctVotes;
+      return b.totalVotes - a.totalVotes;
+    });
+
+    // Assign ranks
+    entries.forEach((e, i) => (e.rank = i + 1));
+
+    return entries;
+  } catch {
+    return [];
   }
 }
 
@@ -242,12 +462,48 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         case "vote": {
           const score = await submitVote(msg.type, msg.entityId, msg.vote);
+
+          // Update user stats after vote
+          const uuid = await getOrCreateUUID();
+          const newStats = await recountCorrectVotes(uuid);
+          if (newStats) await writeUserStats(uuid, newStats);
+
           sendResponse({ success: true, score });
           break;
         }
         case "clearVote": {
           const score = await clearVote(msg.type, msg.entityId);
+
+          // Update user stats after clearing vote
+          const uuid2 = await getOrCreateUUID();
+          const newStats2 = await recountCorrectVotes(uuid2);
+          if (newStats2) await writeUserStats(uuid2, newStats2);
+
           sendResponse({ success: true, score });
+          break;
+        }
+        case "getUserStats": {
+          const uuid = await getOrCreateUUID();
+          const stats = await fetchUserStats(uuid);
+          sendResponse({ success: true, stats });
+          break;
+        }
+        case "getUsername": {
+          const uuid = await getOrCreateUUID();
+          const username = await fetchUsername(uuid);
+          sendResponse({ success: true, username });
+          break;
+        }
+        case "setUsername": {
+          const uuid = await getOrCreateUUID();
+          const result = await setUsername(uuid, msg.username);
+          sendResponse(result);
+          break;
+        }
+        case "getLeaderboard": {
+          const uuid = await getOrCreateUUID();
+          const leaderboard = await fetchLeaderboard();
+          sendResponse({ success: true, leaderboard, userUuid: uuid });
           break;
         }
         default:
@@ -259,3 +515,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true; // keep message channel open for async response
 });
+

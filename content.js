@@ -765,11 +765,73 @@
   const observer = new MutationObserver(onMutation);
 
   /*
+   * Clear watch-page specific injected buttons and markers.
+   * YouTube SPA navigation reuses DOM elements (e.g., the <h1> title,
+   * owner renderer), so the INJECTED class persists from the previous
+   * video. Without clearing, injectors skip re-injection and stale
+   * scores from the previous video/channel remain visible.
+   */
+  function clearWatchPageInjections() {
+    // Remove watch-page video button and reset marker on title h1
+    const titleH1 = document.querySelector("ytd-watch-metadata #title h1");
+    if (titleH1) {
+      titleH1.classList.remove(INJECTED);
+      titleH1.querySelectorAll(".slop-btn").forEach((el) => el.remove());
+    }
+
+    // Remove watch-page channel button and reset marker on owner renderer
+    const ownerRenderer = document.querySelector(
+      "ytd-watch-metadata ytd-video-owner-renderer",
+    );
+    if (ownerRenderer) {
+      ownerRenderer.classList.remove(INJECTED);
+      ownerRenderer.querySelectorAll(".slop-btn").forEach((el) => el.remove());
+    }
+
+    // Remove shorts-specific buttons and reset markers
+    const actionsEl = document.querySelector(
+      "ytd-reel-player-overlay-renderer #actions",
+    );
+    if (actionsEl) {
+      actionsEl.classList.remove(INJECTED);
+      actionsEl.querySelectorAll(".slop-btn").forEach((el) => el.remove());
+    }
+
+    document.querySelectorAll(
+      `yt-reel-channel-bar-view-model.${INJECTED}`,
+    ).forEach((bar) => {
+      bar.classList.remove(INJECTED);
+      bar.querySelectorAll(".slop-btn").forEach((el) => el.remove());
+    });
+
+    const legacyChannelEl = document.querySelector(
+      `ytd-reel-player-overlay-renderer #channel-name.${INJECTED}`,
+    );
+    if (legacyChannelEl) {
+      legacyChannelEl.classList.remove(INJECTED);
+      const nextBtn = legacyChannelEl.parentElement?.querySelector(".slop-btn");
+      if (nextBtn) nextBtn.remove();
+    }
+
+    // Remove channel page button and reset marker
+    const h1 = document.querySelector(
+      "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1",
+    );
+    if (h1) {
+      h1.classList.remove(INJECTED);
+      h1.querySelectorAll(".slop-btn").forEach((el) => el.remove());
+    }
+  }
+
+  /*
    * YouTube is a SPA that emits yt-navigate-finish on route change.
    * Listen for this to re-inject on page transitions (watch > shorts, etc.).
+   * clearWatchPageInjections() removes stale buttons from the previous page,
+   * then runInjectors() creates fresh ones for the new page.
    * 500ms delay allows DOM to fully settle after navigation before re-running injectors.
    */
   document.addEventListener("yt-navigate-finish", () => {
+    clearWatchPageInjections();
     setTimeout(runInjectors, 500);
   });
 

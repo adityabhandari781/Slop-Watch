@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slop Watch — Leaderboards</title>
+  <link rel="stylesheet" href="leaderboard.css" />
+</head>
+<body>
+  <div class="lb">
+    <!-- Header -->
+    <header class="lb__header">
+      <h1 class="lb__title">🏆 Leaderboards</h1>
+      <p class="lb__desc">
+        See who's leading the fight against AI slop! Users are ranked by <strong>correct votes</strong> — 
+        a vote is "correct" when it agrees with the community majority (&gt;50%). Vote on more videos and channels to climb the ranks.
+      </p>
+    </header>
+
+    <!-- User Stats -->
+    <section class="lb__stats">
+      <h2 class="lb__section-title">Your Stats</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-card__value" id="total-votes">—</div>
+          <div class="stat-card__label">Videos / Channels Rated</div>
+          <div class="stat-card__rank" id="total-rank"></div>
+        </div>
+        <div class="stat-card stat-card--accent">
+          <div class="stat-card__value" id="correct-votes">—</div>
+          <div class="stat-card__label">Correct Votes</div>
+          <div class="stat-card__rank" id="correct-rank"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Username -->
+    <section class="lb__username">
+      <h2 class="lb__section-title">Your Username</h2>
+      <p class="lb__hint">Set a username to appear on the leaderboard. This is linked to your browser.</p>
+      <div class="username-row">
+        <input type="text" id="username-input" class="username-row__input" placeholder="Enter username…" maxlength="24" />
+        <button class="username-row__btn" id="username-save">Save</button>
+      </div>
+      <div class="username-msg" id="username-msg"></div>
+    </section>
+
+    <!-- Leaderboard Table -->
+    <section class="lb__table-section">
+      <h2 class="lb__section-title">Top Voters</h2>
+      <div class="lb__table-wrap">
+        <table class="lb-table" id="leaderboard-table">
+          <thead>
+            <tr>
+              <th class="lb-table__th lb-table__th--rank">#</th>
+              <th class="lb-table__th lb-table__th--user">User</th>
+              <th class="lb-table__th lb-table__th--correct">Correct</th>
+              <th class="lb-table__th lb-table__th--total">Total</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-body">
+            <tr><td colspan="4" class="lb-table__empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="lb__footer">
+      <a href="https://github.com/adityabhandari781/Slop-Watch" target="_blank" rel="noopener noreferrer">Slop Watch</a> — Crowdsourced AI Slop Detector
+    </footer>
+  </div>
+
+  <script src="leaderboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+/* ============================================================
+   Slop Watch — Leaderboard Styles
+   ============================================================
+   Full-page dark glassmorphism matching the popup aesthetic
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: linear-gradient(145deg, #0a0a14 0%, #0f0f1a 30%, #1a1a2e 60%, #16213e 100%);
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+
+/* ── Container ─────────────────────────────────────────────── */
+.lb {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 24px 60px;
+}
+
+/* ── Header ────────────────────────────────────────────────── */
+.lb__header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.lb__title {
+  font-size: 32px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffb300 0%, #ff8800 50%, #ff5500 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+  margin-bottom: 12px;
+}
+
+.lb__desc {
+  font-size: 14px;
+  color: #999;
+  line-height: 1.65;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.lb__desc strong {
+  color: #ccc;
+}
+
+/* ── Section Titles ────────────────────────────────────────── */
+.lb__section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 14px;
+}
+
+/* ── Stats Grid ────────────────────────────────────────────── */
+.lb__stats {
+  margin-bottom: 32px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.stat-card {
+  position: relative;
+  padding: 22px 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  text-align: center;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.stat-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.stat-card--accent {
+  border-color: rgba(0, 255, 136, 0.12);
+  background: rgba(0, 255, 136, 0.03);
+}
+
+.stat-card--accent:hover {
+  border-color: rgba(0, 255, 136, 0.25);
+  box-shadow: 0 4px 24px rgba(0, 255, 136, 0.08);
+}
+
+.stat-card__value {
+  font-size: 36px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -1px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.stat-card--accent .stat-card__value {
+  background: linear-gradient(135deg, #00ff88, #00cc6a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-card__label {
+  font-size: 12px;
+  color: #777;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.stat-card__rank {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffb300;
+  min-height: 16px;
+}
+
+/* ── Username Section ──────────────────────────────────────── */
+.lb__username {
+  margin-bottom: 36px;
+}
+
+.lb__hint {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 12px;
+  margin-top: -6px;
+}
+
+.username-row {
+  display: flex;
+  gap: 10px;
+}
+
+.username-row__input {
+  flex: 1;
+  padding: 10px 14px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.username-row__input:focus {
+  border-color: rgba(0, 191, 255, 0.4);
+  box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.1);
+}
+
+.username-row__input::placeholder {
+  color: #555;
+}
+
+.username-row__btn {
+  padding: 10px 22px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f0f1a;
+  background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.2s, filter 0.2s;
+  white-space: nowrap;
+}
+
+.username-row__btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 16px rgba(0, 255, 136, 0.25);
+}
+
+.username-row__btn:active {
+  transform: scale(0.97);
+}
+
+.username-msg {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 18px;
+  transition: color 0.2s;
+}
+
+.username-msg--success {
+  color: #00ff88;
+}
+
+.username-msg--error {
+  color: #f44336;
+}
+
+/* ── Leaderboard Table ─────────────────────────────────────── */
+.lb__table-section {
+  margin-bottom: 32px;
+}
+
+.lb__table-wrap {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lb-table__th {
+  padding: 14px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lb-table__th--rank {
+  width: 50px;
+  text-align: center;
+}
+
+.lb-table__th--correct,
+.lb-table__th--total {
+  width: 90px;
+  text-align: center;
+}
+
+.lb-table td {
+  padding: 12px 16px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background 0.15s;
+}
+
+.lb-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lb-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.lb-table__rank {
+  text-align: center;
+  font-weight: 700;
+  color: #888;
+}
+
+.lb-table__rank--1 {
+  color: #ffd700;
+  font-size: 18px;
+}
+
+.lb-table__rank--2 {
+  color: #c0c0c0;
+  font-size: 16px;
+}
+
+.lb-table__rank--3 {
+  color: #cd7f32;
+  font-size: 16px;
+}
+
+.lb-table__user {
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.lb-table__user--you {
+  color: #00ff88;
+}
+
+.lb-table__correct {
+  text-align: center;
+  font-weight: 700;
+  color: #00ff88;
+}
+
+.lb-table__total {
+  text-align: center;
+  font-weight: 500;
+  color: #999;
+}
+
+.lb-table__empty {
+  text-align: center;
+  color: #555;
+  padding: 32px 16px !important;
+  font-style: italic;
+}
+
+/* ── You-row highlight ─────────────────────────────────────── */
+.lb-table__row--you td {
+  background: rgba(0, 255, 136, 0.04);
+}
+
+/* ── Footer ────────────────────────────────────────────────── */
+.lb__footer {
+  text-align: center;
+  margin-top: 40px;
+  font-size: 12px;
+  color: #444;
+}
+
+.lb__footer a {
+  color: #00bfff;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.lb__footer a:hover {
+  color: #00ff88;
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 500px) {
+  .lb {
+    padding: 24px 16px 40px;
+  }
+
+  .lb__title {
+    font-size: 24px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card__value {
+    font-size: 28px;
+  }
+}
