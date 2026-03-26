@@ -88,12 +88,26 @@ async function fetchScore(type, entityId) {
  * vote exists (first time voting) or on network failure.
  */
 async function fetchMyVote(type, entityId) {
+  const entry = await fetchMyVoteEntry(type, entityId);
+  return entry?.vote || null;
+}
+
+/*
+ * Fetch the current user's full vote entry for an entity.
+ * createdAt is persisted on first vote so we can identify the earliest
+ * five active votes for leaderboard scoring.
+ */
+async function fetchMyVoteEntry(type, entityId) {
   const uuid = await getOrCreateUUID();
   try {
     const resp = await fetch(firebaseUrl(`votes/${type}/${entityId}/${uuid}`));
     if (!resp.ok) return null;
     const data = await resp.json();
-    return data ? data.vote : null;
+    if (!data?.vote) return null;
+    return {
+      vote: data.vote,
+      createdAt: Number.isFinite(data.createdAt) ? data.createdAt : null,
+    };
   } catch {
     return null;
   }
@@ -111,21 +125,25 @@ async function fetchMyVote(type, entityId) {
  */
 async function submitVote(type, entityId, vote) {
   const uuid = await getOrCreateUUID();
-  const existingVote = await fetchMyVote(type, entityId);
+  const existingEntry = await fetchMyVoteEntry(type, entityId);
+  const existingVote = existingEntry?.vote || null;
 
   // No-op if user is re-voting the same way
   if (existingVote === vote) return await fetchScore(type, entityId);
 
+  const createdAt = existingEntry?.createdAt || Date.now();
+  const voteEntry = { vote, createdAt };
+
   // Write the vote
   await fetch(firebaseUrl(`votes/${type}/${entityId}/${uuid}`), {
     method: "PUT",
-    body: JSON.stringify({ vote }),
+    body: JSON.stringify(voteEntry),
   });
 
   // Mirror to user_votes for stats tracking (avoids broad collection reads)
   await fetch(firebaseUrl(`user_votes/${uuid}/${type}/${entityId}`), {
     method: "PUT",
-    body: JSON.stringify({ vote }),
+    body: JSON.stringify(voteEntry),
   });
 
   // Calculate aggregate delta
@@ -168,7 +186,8 @@ async function submitVote(type, entityId, vote) {
  */
 async function clearVote(type, entityId) {
   const uuid = await getOrCreateUUID();
-  const existingVote = await fetchMyVote(type, entityId);
+  const existingEntry = await fetchMyVoteEntry(type, entityId);
+  const existingVote = existingEntry?.vote || null;
 
   if (!existingVote) return await fetchScore(type, entityId);
 
@@ -223,18 +242,77 @@ async function fetchScoreBypass(type, entityId) {
 // ============================================================
 
 /*
- * Check if a vote is "correct" based on current aggregate.
- * A vote agrees with the majority if:
- *   vote === "ai"    and  ai/total > 0.5
- *   vote === "human"  and  ai/total < 0.5
- * Exactly 50/50 is NOT counted as correct.
+ * Fetch all active votes for a video or channel.
  */
-function isVoteCorrect(vote, aggregate) {
-  if (!aggregate || aggregate.total < 1) return false;
-  const aiPct = aggregate.ai / aggregate.total;
-  if (vote === "ai") return aiPct > 0.5;
-  if (vote === "human") return aiPct < 0.5;
-  return false;
+async function fetchEntityVotes(type, entityId) {
+  try {
+    const resp = await fetch(firebaseUrl(`votes/${type}/${entityId}`));
+    if (!resp.ok) return {};
+    const data = await resp.json();
+    return data || {};
+  } catch {
+    return {};
+  }
+}
+
+const EARLY_VOTE_SAMPLE_SIZE = 5;
+
+function buildEntityVoteCacheKey(type, entityId) {
+  return `${type}:${entityId}`;
+}
+
+async function getEntityVotesCached(type, entityId, cache = new Map()) {
+  const key = buildEntityVoteCacheKey(type, entityId);
+  if (!cache.has(key)) cache.set(key, fetchEntityVotes(type, entityId));
+  return await cache.get(key);
+}
+
+function getSortedActiveVotes(votesByUuid) {
+  return Object.entries(votesByUuid || {})
+    .filter(
+      ([, entry]) => entry && (entry.vote === "ai" || entry.vote === "human"),
+    )
+    .map(([uuid, entry]) => ({
+      uuid,
+      vote: entry.vote,
+      createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : null,
+    }))
+    .sort((a, b) => {
+      if (a.createdAt === null || b.createdAt === null) return 0;
+      return a.createdAt - b.createdAt || a.uuid.localeCompare(b.uuid);
+    });
+}
+
+function getEarlyVoteWindow(votesByUuid) {
+  const sortedVotes = getSortedActiveVotes(votesByUuid);
+  if (sortedVotes.some((entry) => entry.createdAt === null)) return null;
+  if (sortedVotes.length < EARLY_VOTE_SAMPLE_SIZE) return null;
+  return sortedVotes.slice(0, EARLY_VOTE_SAMPLE_SIZE);
+}
+
+function getMajorityVote(votes) {
+  if (!votes?.length) return null;
+  const aiVotes = votes.filter((entry) => entry.vote === "ai").length;
+  const humanVotes = votes.length - aiVotes;
+  if (aiVotes === humanVotes) return null;
+  return aiVotes > humanVotes ? "ai" : "human";
+}
+
+/*
+ * A vote counts for leaderboard scoring only when:
+ * 1. The entity has at least 5 active votes.
+ * 2. The user is among the earliest 5 active voters for that entity.
+ * 3. The user's vote matches the majority vote within those 5 votes.
+ */
+function isVoteCorrect(uuid, votesByUuid) {
+  const earlyVotes = getEarlyVoteWindow(votesByUuid);
+  if (!earlyVotes) return false;
+
+  const myVote = earlyVotes.find((entry) => entry.uuid === uuid);
+  if (!myVote) return false;
+
+  const majorityVote = getMajorityVote(earlyVotes);
+  return Boolean(majorityVote && myVote.vote === majorityVote);
 }
 
 /*
@@ -281,11 +359,11 @@ async function fetchUserStatsRaw(uuid) {
 }
 
 /*
- * Recount correct votes for a user using their personal user_votes mirror.
- * Reads user_votes/{uuid} (accessible without broad collection permissions),
- * then fetches each aggregate individually to check majority agreement.
+ * Recount leaderboard-eligible votes for a user using their personal
+ * user_votes mirror. A vote only counts when it is part of the earliest
+ * five active votes on an entity and agrees with that five-vote majority.
  */
-async function recountCorrectVotes(uuid) {
+async function recountCorrectVotes(uuid, entityVotesCache = new Map()) {
   try {
     const resp = await fetch(firebaseUrl(`user_votes/${uuid}`));
     if (!resp.ok) return { totalVotes: 0, correctVotes: 0 };
@@ -302,9 +380,11 @@ async function recountCorrectVotes(uuid) {
         if (!entry?.vote) continue;
         totalCount++;
         promises.push(
-          fetchScoreBypass(type, entityId).then((aggregate) => {
-            if (isVoteCorrect(entry.vote, aggregate)) correctCount++;
-          }),
+          getEntityVotesCached(type, entityId, entityVotesCache).then(
+            (votesByUuid) => {
+              if (isVoteCorrect(uuid, votesByUuid)) correctCount++;
+            },
+          ),
         );
       }
     }
@@ -314,6 +394,30 @@ async function recountCorrectVotes(uuid) {
   } catch {
     return null;
   }
+}
+
+/*
+ * Refresh cached leaderboard stats for everyone affected by vote changes on
+ * a single entity. This keeps the leaderboard consistent when the first-five
+ * window or its majority changes.
+ */
+async function refreshStatsForAffectedUsers(type, entityId, extraUuids = []) {
+  const entityVotes = await fetchEntityVotes(type, entityId);
+  const entityVotesCache = new Map([
+    [buildEntityVoteCacheKey(type, entityId), Promise.resolve(entityVotes)],
+  ]);
+
+  const uuids = new Set(extraUuids);
+  for (const [uuid, entry] of Object.entries(entityVotes)) {
+    if (entry?.vote) uuids.add(uuid);
+  }
+
+  await Promise.all(
+    [...uuids].map(async (uuid) => {
+      const newStats = await recountCorrectVotes(uuid, entityVotesCache);
+      if (newStats) await writeUserStats(uuid, newStats);
+    }),
+  );
 }
 
 /*
@@ -463,10 +567,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "vote": {
           const score = await submitVote(msg.type, msg.entityId, msg.vote);
 
-          // Update user stats after vote
           const uuid = await getOrCreateUUID();
-          const newStats = await recountCorrectVotes(uuid);
-          if (newStats) await writeUserStats(uuid, newStats);
+          await refreshStatsForAffectedUsers(msg.type, msg.entityId, [uuid]);
 
           sendResponse({ success: true, score });
           break;
@@ -474,10 +576,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "clearVote": {
           const score = await clearVote(msg.type, msg.entityId);
 
-          // Update user stats after clearing vote
-          const uuid2 = await getOrCreateUUID();
-          const newStats2 = await recountCorrectVotes(uuid2);
-          if (newStats2) await writeUserStats(uuid2, newStats2);
+          const uuid = await getOrCreateUUID();
+          await refreshStatsForAffectedUsers(msg.type, msg.entityId, [uuid]);
 
           sendResponse({ success: true, score });
           break;
@@ -515,4 +615,3 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true; // keep message channel open for async response
 });
-

@@ -10,10 +10,10 @@
   <div class="lb">
     <!-- Header -->
     <header class="lb__header">
-      <h1 class="lb__title">🏆 Leaderboards</h1>
+      <h1 class="lb__title">Leaderboards</h1>
       <p class="lb__desc">
-        See who's leading the fight against AI slop! Users are ranked by <strong>correct votes</strong> — 
-        a vote is "correct" when it agrees with the community majority (&gt;50%). Vote on more videos and channels to climb the ranks.
+        See who's leading the fight against AI slop! Users are ranked by <strong>good votes</strong> —
+        a vote counts only when the item has at least 5 votes, your vote is among the first 5, and it matches that five-vote majority.
       </p>
     </header>
 
@@ -28,7 +28,7 @@
         </div>
         <div class="stat-card stat-card--accent">
           <div class="stat-card__value" id="correct-votes">—</div>
-          <div class="stat-card__label">Correct Votes</div>
+          <div class="stat-card__label">Good Votes</div>
           <div class="stat-card__rank" id="correct-rank"></div>
         </div>
       </div>
@@ -54,7 +54,7 @@
             <tr>
               <th class="lb-table__th lb-table__th--rank">#</th>
               <th class="lb-table__th lb-table__th--user">User</th>
-              <th class="lb-table__th lb-table__th--correct">Correct</th>
+              <th class="lb-table__th lb-table__th--correct">Good</th>
               <th class="lb-table__th lb-table__th--total">Total</th>
             </tr>
           </thead>

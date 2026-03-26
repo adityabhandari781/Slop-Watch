@@ -421,15 +421,21 @@
 
   /*
    * Inject "Is video AI" button into watch page title.
-   * Marks injected to avoid duplicates across mutation cycles.
+   * Uses data-slop-id comparison (not INJECTED class) to detect staleness.
+   * If a button exists for a different video (SPA navigation), replaces it.
    */
   function injectWatchVideoButton() {
     const titleH1 = document.querySelector("ytd-watch-metadata #title h1");
-    if (!titleH1 || titleH1.classList.contains(INJECTED)) return;
+    if (!titleH1) return;
     const videoId = getCurrentVideoId();
     if (!videoId) return;
 
-    titleH1.classList.add(INJECTED);
+    const existing = titleH1.querySelector(".slop-btn--video-title");
+    if (existing) {
+      if (existing.dataset.slopId === videoId) return; // already correct
+      existing.remove(); // stale — remove before re-injecting
+    }
+
     titleH1.style.display = "flex";
     titleH1.style.alignItems = "center";
     const btn = createButton("video", videoId, "slop-btn--video-title");
@@ -438,19 +444,25 @@
 
   /*
    * Inject "Is channel AI" button into watch page owner section.
-   * Places button after #upload-info (upload date/subscriber info).
+   * Uses data-slop-id comparison to detect staleness from SPA navigation.
+   * If a button exists for a different channel, replaces it.
    */
   function injectWatchChannelButton() {
     const ownerRenderer = document.querySelector(
       "ytd-watch-metadata ytd-video-owner-renderer",
     );
-    if (!ownerRenderer || ownerRenderer.classList.contains(INJECTED)) return;
+    if (!ownerRenderer) return;
     const uploadInfo = ownerRenderer.querySelector("#upload-info");
     if (!uploadInfo) return;
     const handle = getChannelHandle();
     if (!handle) return;
 
-    ownerRenderer.classList.add(INJECTED);
+    const existing = ownerRenderer.querySelector(".slop-btn--channel-watch");
+    if (existing) {
+      if (existing.dataset.slopId === handle) return; // already correct
+      existing.remove(); // stale — remove before re-injecting
+    }
+
     const btn = createButton("channel", handle, "slop-btn--channel-watch");
     uploadInfo.insertAdjacentElement("afterend", btn);
   }
@@ -753,11 +765,19 @@
   /*
    * Debounce mutation handler to avoid thrashing on batch DOM changes.
    * YouTube pushes many mutations per navigation; debounce coalesces them.
-   * 300ms delay balances responsiveness (feel snappy) with efficiency (avoid redundant runs).
+   * 300ms delay balances responsiveness (feel snappy) with efficiency
+   * (avoid redundant runs).
+   *
+   * navigating flag: suppresses MutationObserver-triggered injections
+   * during SPA navigation. Without this, the observer fires runInjectors
+   * at 300ms (before YouTube updates owner/channel metadata), re-injecting
+   * buttons with stale data from the previous video.
    */
   let debounceTimer = null;
+  let navigating = false;
 
   function onMutation() {
+    if (navigating) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(runInjectors, 300);
   }
@@ -765,74 +785,68 @@
   const observer = new MutationObserver(onMutation);
 
   /*
-   * Clear watch-page specific injected buttons and markers.
-   * YouTube SPA navigation reuses DOM elements (e.g., the <h1> title,
-   * owner renderer), so the INJECTED class persists from the previous
-   * video. Without clearing, injectors skip re-injection and stale
-   * scores from the previous video/channel remain visible.
+   * Clear ALL interactive buttons and their INJECTED markers.
+   * Called on SPA navigation so stale scores from the previous page
+   * don't linger. Covers watch page, shorts, and channel page layouts.
    */
-  function clearWatchPageInjections() {
-    // Remove watch-page video button and reset marker on title h1
-    const titleH1 = document.querySelector("ytd-watch-metadata #title h1");
-    if (titleH1) {
-      titleH1.classList.remove(INJECTED);
-      titleH1.querySelectorAll(".slop-btn").forEach((el) => el.remove());
-    }
+  function clearPageInjections() {
+    // Remove all interactive slop buttons from the page
+    document
+      .querySelectorAll(".slop-btn")
+      .forEach((el) => el.remove());
 
-    // Remove watch-page channel button and reset marker on owner renderer
+    // Reset INJECTED markers on watch-page elements
+    const titleH1 = document.querySelector("ytd-watch-metadata #title h1");
+    if (titleH1) titleH1.classList.remove(INJECTED);
+
     const ownerRenderer = document.querySelector(
       "ytd-watch-metadata ytd-video-owner-renderer",
     );
-    if (ownerRenderer) {
-      ownerRenderer.classList.remove(INJECTED);
-      ownerRenderer.querySelectorAll(".slop-btn").forEach((el) => el.remove());
-    }
+    if (ownerRenderer) ownerRenderer.classList.remove(INJECTED);
 
-    // Remove shorts-specific buttons and reset markers
+    // Shorts elements
     const actionsEl = document.querySelector(
       "ytd-reel-player-overlay-renderer #actions",
     );
-    if (actionsEl) {
-      actionsEl.classList.remove(INJECTED);
-      actionsEl.querySelectorAll(".slop-btn").forEach((el) => el.remove());
-    }
+    if (actionsEl) actionsEl.classList.remove(INJECTED);
 
     document.querySelectorAll(
       `yt-reel-channel-bar-view-model.${INJECTED}`,
-    ).forEach((bar) => {
-      bar.classList.remove(INJECTED);
-      bar.querySelectorAll(".slop-btn").forEach((el) => el.remove());
-    });
+    ).forEach((bar) => bar.classList.remove(INJECTED));
 
     const legacyChannelEl = document.querySelector(
       `ytd-reel-player-overlay-renderer #channel-name.${INJECTED}`,
     );
-    if (legacyChannelEl) {
-      legacyChannelEl.classList.remove(INJECTED);
-      const nextBtn = legacyChannelEl.parentElement?.querySelector(".slop-btn");
-      if (nextBtn) nextBtn.remove();
-    }
+    if (legacyChannelEl) legacyChannelEl.classList.remove(INJECTED);
 
-    // Remove channel page button and reset marker
+    // Channel page
     const h1 = document.querySelector(
       "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1",
     );
-    if (h1) {
-      h1.classList.remove(INJECTED);
-      h1.querySelectorAll(".slop-btn").forEach((el) => el.remove());
-    }
+    if (h1) h1.classList.remove(INJECTED);
   }
 
   /*
    * YouTube is a SPA that emits yt-navigate-finish on route change.
-   * Listen for this to re-inject on page transitions (watch > shorts, etc.).
-   * clearWatchPageInjections() removes stale buttons from the previous page,
-   * then runInjectors() creates fresh ones for the new page.
-   * 500ms delay allows DOM to fully settle after navigation before re-running injectors.
+   *
+   * 1. Set navigating=true to block the MutationObserver from
+   *    re-injecting buttons with stale data while YouTube updates the DOM.
+   * 2. Cancel any pending debounced runInjectors.
+   * 3. clearPageInjections() removes ALL old buttons and INJECTED markers.
+   * 4. After 600ms (enough for YouTube to update metadata), unblock
+   *    mutations and run injectors with fresh data.
    */
   document.addEventListener("yt-navigate-finish", () => {
-    clearWatchPageInjections();
-    setTimeout(runInjectors, 500);
+    navigating = true;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    clearPageInjections();
+    setTimeout(() => {
+      navigating = false;
+      runInjectors();
+    }, 600);
   });
 
   // ============================================================

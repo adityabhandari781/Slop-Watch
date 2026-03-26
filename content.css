@@ -247,7 +247,7 @@
 }
 
 .slop-hidden::after {
-  content: "🤖 Likely AI Slop";
+  content: "Likely AI Slop";
   position: absolute;
   inset: 0;
   display: flex;
