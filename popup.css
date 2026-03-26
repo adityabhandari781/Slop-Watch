@@ -265,6 +265,7 @@ body {
 
 .advanced-panel__btn {
   display: flex;
+  text-align: center;
   align-items: center;
   gap: 8px;
   width: 100%;

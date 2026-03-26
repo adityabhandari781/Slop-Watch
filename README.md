@@ -15,9 +15,9 @@
 ## Installation (Developer Mode)
 
 1. Clone or download this repository to your local machine:
-   ```bash
-   git clone https://github.com/adityabhandari781/Slop-Watch.git
-   ```
+    ```bash
+    git clone https://github.com/adityabhandari781/Slop-Watch.git
+    ```
 2. Open Google Chrome and navigate to the Extensions page at `chrome://extensions/`.
 3. Enable **Developer mode** using the toggle switch in the top right corner.
 4. Click the **Load unpacked** button in the top left.
@@ -31,3 +31,15 @@ The extension should now be installed and active on YouTube!
 2. You will notice small badges on video thumbnails showing the current "AI chance". You can hover over and click these badges to interact with them and cast your own vote.
 3. Similar badges exist on channel pages next to the channel name.
 4. Click the **Slop Watch** extension icon in your Chrome toolbar to open the popup. From here, you can adjust the sliders to automatically hide content that is deemed too "sloppy" by the community.
+
+## Future scope
+
+- Add to Firefox
+- Extending the extension to other sites:
+    - Instagram
+    - Reddit
+    - X
+    - Pinterest
+    - Quora
+    - Medium
+    - Facebook
