@@ -43,3 +43,5 @@ The extension should now be installed and active on YouTube!
     - Quora
     - Medium
     - Facebook
+- Add a donate button
+- Make a website for it
