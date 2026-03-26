@@ -433,7 +433,7 @@
     const existing = titleH1.querySelector(".slop-btn--video-title");
     if (existing) {
       if (existing.dataset.slopId === videoId) return; // already correct
-      existing.remove(); // stale — remove before re-injecting
+      existing.remove(); // stale: remove before re-injecting
     }
 
     titleH1.style.display = "flex";
@@ -460,7 +460,7 @@
     const existing = ownerRenderer.querySelector(".slop-btn--channel-watch");
     if (existing) {
       if (existing.dataset.slopId === handle) return; // already correct
-      existing.remove(); // stale — remove before re-injecting
+      existing.remove(); // stale: remove before re-injecting
     }
 
     const btn = createButton("channel", handle, "slop-btn--channel-watch");

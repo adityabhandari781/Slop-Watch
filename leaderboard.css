@@ -1,5 +1,5 @@
 /* ============================================================
-   Slop Watch — Leaderboard Styles
+   Slop Watch: Leaderboard Styles
    ============================================================
    Full-page dark glassmorphism matching the popup aesthetic
    ============================================================ */
@@ -35,7 +35,7 @@ body {
 .lb__title {
   font-size: 32px;
   font-weight: 800;
-  background: linear-gradient(135deg, #ffb300 0%, #ff8800 50%, #ff5500 100%);
+  background: #00ff88;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -72,8 +72,12 @@ body {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
+
+  /* Add these */
+  justify-items: center; /* horizontal centering */
+  align-items: center;   /* vertical centering */
 }
 
 .stat-card {

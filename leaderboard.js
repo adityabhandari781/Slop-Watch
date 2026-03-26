@@ -1,5 +1,5 @@
 // ============================================================
-// Slop Watch — Leaderboard Script
+// Slop Watch: Leaderboard Script
 // ============================================================
 
 /*
@@ -27,9 +27,7 @@ const els = {};
 
 document.addEventListener("DOMContentLoaded", async () => {
   els.totalVotes = document.getElementById("total-votes");
-  els.correctVotes = document.getElementById("correct-votes");
   els.totalRank = document.getElementById("total-rank");
-  els.correctRank = document.getElementById("correct-rank");
   els.usernameInput = document.getElementById("username-input");
   els.usernameSave = document.getElementById("username-save");
   els.usernameMsg = document.getElementById("username-msg");
@@ -56,10 +54,8 @@ async function loadAll() {
   // User stats
   if (statsResp?.success) {
     els.totalVotes.textContent = statsResp.stats.totalVotes;
-    els.correctVotes.textContent = statsResp.stats.correctVotes;
   } else {
     els.totalVotes.textContent = "0";
-    els.correctVotes.textContent = "0";
   }
 
   // Username
@@ -79,23 +75,12 @@ async function loadAll() {
         (e) => e.uuid === lbResp.userUuid,
       );
       if (userEntry) {
-        els.correctRank.textContent = `Rank #${userEntry.rank}`;
-
-        // Compute total-votes rank (sort by totalVotes desc)
-        const byTotal = [...lbResp.leaderboard].sort(
-          (a, b) => b.totalVotes - a.totalVotes,
-        );
-        const totalRankIdx = byTotal.findIndex(
-          (e) => e.uuid === lbResp.userUuid,
-        );
-        if (totalRankIdx !== -1) {
-          els.totalRank.textContent = `Rank #${totalRankIdx + 1}`;
-        }
+        els.totalRank.textContent = `Rank #${userEntry.rank}`;
       }
     }
   } else {
     els.leaderboardBody.innerHTML =
-      '<tr><td colspan="4" class="lb-table__empty">No leaderboard data yet. Start voting!</td></tr>';
+      '<tr><td colspan="3" class="lb-table__empty">No leaderboard data yet. Start voting!</td></tr>';
   }
 }
 
@@ -123,17 +108,12 @@ function renderLeaderboard(entries, userUuid) {
     if (isYou) tdUser.classList.add("lb-table__user--you");
     tdUser.textContent = entry.username + (isYou ? " (you)" : "");
 
-    // Correct votes
-    const tdCorrect = document.createElement("td");
-    tdCorrect.className = "lb-table__correct";
-    tdCorrect.textContent = entry.correctVotes;
-
     // Total votes
     const tdTotal = document.createElement("td");
     tdTotal.className = "lb-table__total";
     tdTotal.textContent = entry.totalVotes;
 
-    tr.append(tdRank, tdUser, tdCorrect, tdTotal);
+    tr.append(tdRank, tdUser, tdTotal);
     els.leaderboardBody.appendChild(tr);
   });
 }

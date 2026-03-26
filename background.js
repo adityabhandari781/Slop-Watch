@@ -88,26 +88,12 @@ async function fetchScore(type, entityId) {
  * vote exists (first time voting) or on network failure.
  */
 async function fetchMyVote(type, entityId) {
-  const entry = await fetchMyVoteEntry(type, entityId);
-  return entry?.vote || null;
-}
-
-/*
- * Fetch the current user's full vote entry for an entity.
- * createdAt is persisted on first vote so we can identify the earliest
- * five active votes for leaderboard scoring.
- */
-async function fetchMyVoteEntry(type, entityId) {
   const uuid = await getOrCreateUUID();
   try {
     const resp = await fetch(firebaseUrl(`votes/${type}/${entityId}/${uuid}`));
     if (!resp.ok) return null;
     const data = await resp.json();
-    if (!data?.vote) return null;
-    return {
-      vote: data.vote,
-      createdAt: Number.isFinite(data.createdAt) ? data.createdAt : null,
-    };
+    return data ? data.vote : null;
   } catch {
     return null;
   }
@@ -125,25 +111,21 @@ async function fetchMyVoteEntry(type, entityId) {
  */
 async function submitVote(type, entityId, vote) {
   const uuid = await getOrCreateUUID();
-  const existingEntry = await fetchMyVoteEntry(type, entityId);
-  const existingVote = existingEntry?.vote || null;
+  const existingVote = await fetchMyVote(type, entityId);
 
   // No-op if user is re-voting the same way
   if (existingVote === vote) return await fetchScore(type, entityId);
 
-  const createdAt = existingEntry?.createdAt || Date.now();
-  const voteEntry = { vote, createdAt };
-
   // Write the vote
   await fetch(firebaseUrl(`votes/${type}/${entityId}/${uuid}`), {
     method: "PUT",
-    body: JSON.stringify(voteEntry),
+    body: JSON.stringify({ vote }),
   });
 
   // Mirror to user_votes for stats tracking (avoids broad collection reads)
   await fetch(firebaseUrl(`user_votes/${uuid}/${type}/${entityId}`), {
     method: "PUT",
-    body: JSON.stringify(voteEntry),
+    body: JSON.stringify({ vote }),
   });
 
   // Calculate aggregate delta
@@ -186,8 +168,7 @@ async function submitVote(type, entityId, vote) {
  */
 async function clearVote(type, entityId) {
   const uuid = await getOrCreateUUID();
-  const existingEntry = await fetchMyVoteEntry(type, entityId);
-  const existingVote = existingEntry?.vote || null;
+  const existingVote = await fetchMyVote(type, entityId);
 
   if (!existingVote) return await fetchScore(type, entityId);
 
@@ -242,95 +223,20 @@ async function fetchScoreBypass(type, entityId) {
 // ============================================================
 
 /*
- * Fetch all active votes for a video or channel.
- */
-async function fetchEntityVotes(type, entityId) {
-  try {
-    const resp = await fetch(firebaseUrl(`votes/${type}/${entityId}`));
-    if (!resp.ok) return {};
-    const data = await resp.json();
-    return data || {};
-  } catch {
-    return {};
-  }
-}
-
-const EARLY_VOTE_SAMPLE_SIZE = 5;
-
-function buildEntityVoteCacheKey(type, entityId) {
-  return `${type}:${entityId}`;
-}
-
-async function getEntityVotesCached(type, entityId, cache = new Map()) {
-  const key = buildEntityVoteCacheKey(type, entityId);
-  if (!cache.has(key)) cache.set(key, fetchEntityVotes(type, entityId));
-  return await cache.get(key);
-}
-
-function getSortedActiveVotes(votesByUuid) {
-  return Object.entries(votesByUuid || {})
-    .filter(
-      ([, entry]) => entry && (entry.vote === "ai" || entry.vote === "human"),
-    )
-    .map(([uuid, entry]) => ({
-      uuid,
-      vote: entry.vote,
-      createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : null,
-    }))
-    .sort((a, b) => {
-      if (a.createdAt === null || b.createdAt === null) return 0;
-      return a.createdAt - b.createdAt || a.uuid.localeCompare(b.uuid);
-    });
-}
-
-function getEarlyVoteWindow(votesByUuid) {
-  const sortedVotes = getSortedActiveVotes(votesByUuid);
-  if (sortedVotes.some((entry) => entry.createdAt === null)) return null;
-  if (sortedVotes.length < EARLY_VOTE_SAMPLE_SIZE) return null;
-  return sortedVotes.slice(0, EARLY_VOTE_SAMPLE_SIZE);
-}
-
-function getMajorityVote(votes) {
-  if (!votes?.length) return null;
-  const aiVotes = votes.filter((entry) => entry.vote === "ai").length;
-  const humanVotes = votes.length - aiVotes;
-  if (aiVotes === humanVotes) return null;
-  return aiVotes > humanVotes ? "ai" : "human";
-}
-
-/*
- * A vote counts for leaderboard scoring only when:
- * 1. The entity has at least 5 active votes.
- * 2. The user is among the earliest 5 active voters for that entity.
- * 3. The user's vote matches the majority vote within those 5 votes.
- */
-function isVoteCorrect(uuid, votesByUuid) {
-  const earlyVotes = getEarlyVoteWindow(votesByUuid);
-  if (!earlyVotes) return false;
-
-  const myVote = earlyVotes.find((entry) => entry.uuid === uuid);
-  if (!myVote) return false;
-
-  const majorityVote = getMajorityVote(earlyVotes);
-  return Boolean(majorityVote && myVote.vote === majorityVote);
-}
-
-/*
  * Fetch user stats from Firebase.
  */
 async function fetchUserStats(uuid) {
   try {
     const resp = await fetch(firebaseUrl(`user_stats/${uuid}`));
-    if (!resp.ok) return { totalVotes: 0, correctVotes: 0 };
+    if (!resp.ok) return { totalVotes: 0 };
     const data = await resp.json();
     return data
       ? {
           totalVotes: data.totalVotes || 0,
-          correctVotes: data.correctVotes || 0,
         }
-      : { totalVotes: 0, correctVotes: 0 };
+      : { totalVotes: 0 };
   } catch {
-    return { totalVotes: 0, correctVotes: 0 };
+    return { totalVotes: 0 };
   }
 }
 
@@ -341,6 +247,7 @@ async function writeUserStats(uuid, stats) {
   // Preserve username field if it exists
   const existing = await fetchUserStatsRaw(uuid);
   const merged = { ...existing, ...stats };
+  delete merged.correctVotes;
   await fetch(firebaseUrl(`user_stats/${uuid}`), {
     method: "PUT",
     body: JSON.stringify(merged),
@@ -359,65 +266,29 @@ async function fetchUserStatsRaw(uuid) {
 }
 
 /*
- * Recount leaderboard-eligible votes for a user using their personal
- * user_votes mirror. A vote only counts when it is part of the earliest
- * five active votes on an entity and agrees with that five-vote majority.
+ * Recount a user's total active votes from the user_votes mirror.
  */
-async function recountCorrectVotes(uuid, entityVotesCache = new Map()) {
+async function recountUserStats(uuid) {
   try {
     const resp = await fetch(firebaseUrl(`user_votes/${uuid}`));
-    if (!resp.ok) return { totalVotes: 0, correctVotes: 0 };
+    if (!resp.ok) return { totalVotes: 0 };
     const userVotes = await resp.json();
-    if (!userVotes) return { totalVotes: 0, correctVotes: 0 };
+    if (!userVotes) return { totalVotes: 0 };
 
-    let correctCount = 0;
     let totalCount = 0;
 
-    const promises = [];
     for (const type of ["video", "channel"]) {
       if (!userVotes[type]) continue;
-      for (const [entityId, entry] of Object.entries(userVotes[type])) {
+      for (const entry of Object.values(userVotes[type])) {
         if (!entry?.vote) continue;
         totalCount++;
-        promises.push(
-          getEntityVotesCached(type, entityId, entityVotesCache).then(
-            (votesByUuid) => {
-              if (isVoteCorrect(uuid, votesByUuid)) correctCount++;
-            },
-          ),
-        );
       }
     }
 
-    await Promise.all(promises);
-    return { totalVotes: totalCount, correctVotes: correctCount };
+    return { totalVotes: totalCount };
   } catch {
     return null;
   }
-}
-
-/*
- * Refresh cached leaderboard stats for everyone affected by vote changes on
- * a single entity. This keeps the leaderboard consistent when the first-five
- * window or its majority changes.
- */
-async function refreshStatsForAffectedUsers(type, entityId, extraUuids = []) {
-  const entityVotes = await fetchEntityVotes(type, entityId);
-  const entityVotesCache = new Map([
-    [buildEntityVoteCacheKey(type, entityId), Promise.resolve(entityVotes)],
-  ]);
-
-  const uuids = new Set(extraUuids);
-  for (const [uuid, entry] of Object.entries(entityVotes)) {
-    if (entry?.vote) uuids.add(uuid);
-  }
-
-  await Promise.all(
-    [...uuids].map(async (uuid) => {
-      const newStats = await recountCorrectVotes(uuid, entityVotesCache);
-      if (newStats) await writeUserStats(uuid, newStats);
-    }),
-  );
 }
 
 /*
@@ -473,6 +344,7 @@ async function setUsername(uuid, username) {
 
     // Also save in user_stats for leaderboard convenience
     const raw = await fetchUserStatsRaw(uuid);
+    delete raw.correctVotes;
     raw.username = username;
     const statsResp = await fetch(firebaseUrl(`user_stats/${uuid}`), {
       method: "PUT",
@@ -494,7 +366,7 @@ async function setUsername(uuid, username) {
 
 /*
  * Fetch full leaderboard: all user_stats entries that have a username,
- * sorted by correctVotes descending.
+ * sorted by totalVotes descending.
  */
 async function fetchLeaderboard() {
   try {
@@ -509,17 +381,15 @@ async function fetchLeaderboard() {
         entries.push({
           uuid,
           username: stats.username,
-          correctVotes: stats.correctVotes || 0,
           totalVotes: stats.totalVotes || 0,
         });
       }
     }
 
-    // Sort by correctVotes desc, then totalVotes desc
+    // Sort by totalVotes desc, then username asc for stable ordering
     entries.sort((a, b) => {
-      if (b.correctVotes !== a.correctVotes)
-        return b.correctVotes - a.correctVotes;
-      return b.totalVotes - a.totalVotes;
+      if (b.totalVotes !== a.totalVotes) return b.totalVotes - a.totalVotes;
+      return a.username.localeCompare(b.username);
     });
 
     // Assign ranks
@@ -568,7 +438,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const score = await submitVote(msg.type, msg.entityId, msg.vote);
 
           const uuid = await getOrCreateUUID();
-          await refreshStatsForAffectedUsers(msg.type, msg.entityId, [uuid]);
+          const newStats = await recountUserStats(uuid);
+          if (newStats) await writeUserStats(uuid, newStats);
 
           sendResponse({ success: true, score });
           break;
@@ -577,7 +448,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const score = await clearVote(msg.type, msg.entityId);
 
           const uuid = await getOrCreateUUID();
-          await refreshStatsForAffectedUsers(msg.type, msg.entityId, [uuid]);
+          const newStats = await recountUserStats(uuid);
+          if (newStats) await writeUserStats(uuid, newStats);
 
           sendResponse({ success: true, score });
           break;
