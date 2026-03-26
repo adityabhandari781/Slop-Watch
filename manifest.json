@@ -6,7 +6,7 @@
   "permissions": ["storage"],
   "host_permissions": [
     "*://*.youtube.com/*",
-    "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app/*"
   ],
   "background": {
     "service_worker": "background.js"

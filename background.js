@@ -9,7 +9,7 @@
 // CONFIGURATION
 // ============================================================
 const FIREBASE_DB_URL =
-  "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app/";
+  "https://slop-watch-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 // ============================================================
 // Browser UUID (persistent per install)
@@ -56,7 +56,13 @@ function invalidateCache(key) {
 // Firebase helpers
 // ============================================================
 function firebaseUrl(path) {
-  return `${FIREBASE_DB_URL}/${path}.json`;
+  const encodedPath = String(path)
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `${FIREBASE_DB_URL}/${encodedPath}.json`;
 }
 
 /*

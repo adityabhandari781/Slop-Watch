@@ -103,35 +103,55 @@
    * Extract channel handle from watch page metadata.
    * Looks for the owner section link, falls back to null if not found.
    */
-  function getChannelHandle() {
-    const link = document.querySelector(
-      "ytd-watch-metadata #owner ytd-channel-name a",
-    );
-    if (link) {
-      const m = link.href.match(/\/@([^/?]+)/);
-      if (m) return m[1];
-    }
+  function getChannelEntityIdFromUrl(url) {
+    try {
+      const u = new URL(url, location.origin);
+      const path = u.pathname;
+
+      if (path.startsWith("/@")) {
+        return `handle:${path.slice(2).split("/")[0].toLowerCase()}`;
+      }
+      if (path.startsWith("/channel/")) {
+        return `channel:${path.slice("/channel/".length).split("/")[0]}`;
+      }
+      if (path.startsWith("/user/")) {
+        return `user:${path.slice("/user/".length).split("/")[0].toLowerCase()}`;
+      }
+      if (path.startsWith("/c/")) {
+        return `custom:${path.slice("/c/".length).split("/")[0].toLowerCase()}`;
+      }
+    } catch {}
+
     return null;
   }
 
-  function getChannelHandleFromPage() {
-    const m = location.pathname.match(/^\/@([^/?]+)/);
-    return m ? m[1] : null;
+  function getChannelEntityId() {
+    const link = document.querySelector(
+      "ytd-watch-metadata #owner ytd-channel-name a",
+    );
+    return link ? getChannelEntityIdFromUrl(link.href) : null;
+  }
+
+  function getChannelEntityIdFromPage() {
+    return getChannelEntityIdFromUrl(location.href);
   }
 
   /*
-   * Extract channel handle from thumbnail context (grid/list items).
-   * Walks up to the renderer container and extracts from channel link.
+   * Extract a stable channel entity key from thumbnail or list context.
+   * Uses canonical channel URLs when present and avoids display-name fallbacks,
+   * which are ambiguous and may contain characters unsafe for database keys.
    */
-  function getChannelHandleFromThumb(thumbEl) {
+  function getChannelEntityIdFromThumb(thumbEl) {
     const renderer = thumbEl.closest(
       "ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer",
     );
     if (!renderer) return null;
-    const link = renderer.querySelector('a[href*="/@"]');
-    if (!link) return null;
-    const m = link.href.match(/\/@([^/?]+)/);
-    return m ? m[1] : null;
+
+    const link = renderer.querySelector(
+      'a[href*="/@"], a[href*="/channel/"], a[href*="/user/"], a[href*="/c/"]',
+    );
+
+    return link ? getChannelEntityIdFromUrl(link.href) : null;
   }
 
   // ============================================================
@@ -454,16 +474,16 @@
     if (!ownerRenderer) return;
     const uploadInfo = ownerRenderer.querySelector("#upload-info");
     if (!uploadInfo) return;
-    const handle = getChannelHandle();
-    if (!handle) return;
+    const entityId = getChannelEntityId();
+    if (!entityId) return;
 
     const existing = ownerRenderer.querySelector(".slop-btn--channel-watch");
     if (existing) {
-      if (existing.dataset.slopId === handle) return; // already correct
+      if (existing.dataset.slopId === entityId) return; // already correct
       existing.remove(); // stale: remove before re-injecting
     }
 
-    const btn = createButton("channel", handle, "slop-btn--channel-watch");
+    const btn = createButton("channel", entityId, "slop-btn--channel-watch");
     uploadInfo.insertAdjacentElement("afterend", btn);
   }
 
@@ -488,34 +508,20 @@
       if (!channelRow) return;
 
       /*
-       * Try link first (homepage has proper channel links).
-       * Fallback to text content (sidebar renders plain text).
-       * Clone and strip nested badges to isolate channel name.
+       * Only use canonical channel URLs. Display-name text is not stable and
+       * can introduce invalid database keys.
        */
-      let handle = null;
-      const channelLink = item.querySelector('a[href*="/@"]');
-      if (channelLink) {
-        const m = channelLink.href.match(/\/@([^/?]+)/);
-        if (m) handle = m[1];
-      }
+      const channelLink = item.querySelector(
+        'a[href*="/@"], a[href*="/channel/"], a[href*="/user/"], a[href*="/c/"]',
+      );
+      const entityId = channelLink
+        ? getChannelEntityIdFromUrl(channelLink.href)
+        : null;
 
-      if (!handle) {
-        const textSpan = channelRow.querySelector(
-          ".yt-content-metadata-view-model__metadata-text",
-        );
-        if (textSpan) {
-          const cloned = textSpan.cloneNode(true);
-          cloned
-            .querySelectorAll(".yt-core-attributed-string--inline-block-mod")
-            .forEach((el) => el.remove());
-          handle = cloned.textContent.trim();
-        }
-      }
-
-      if (!handle) return;
+      if (!entityId) return;
       if (channelRow.querySelector(".slop-channel-overlay")) return;
 
-      sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
+      sendMsg({ action: "getScore", type: "channel", entityId }).then(
         (resp) => {
           if (!resp?.success) return;
           if (channelRow.querySelector(".slop-channel-overlay")) return;
@@ -552,19 +558,12 @@
       target.style.display = "inline-flex";
       target.style.alignItems = "center";
 
-      // Extract channel handle or name
-      let handle = null;
+      // Extract a stable channel key from a canonical channel URL.
       const link = target.querySelector("a[href]");
-      if (link) {
-        const m = link.href.match(/\/@([^/?]+)/);
-        handle = m ? m[1] : link.textContent.trim();
-      } else {
-        // Plain text channel name (common in playlist panel)
-        handle = target.textContent.trim();
-      }
-      if (!handle) return;
+      const entityId = link ? getChannelEntityIdFromUrl(link.href) : null;
+      if (!entityId) return;
 
-      sendMsg({ action: "getScore", type: "channel", entityId: handle }).then(
+      sendMsg({ action: "getScore", type: "channel", entityId }).then(
         (resp) => {
           if (!resp?.success) return;
           if (target.querySelector(".slop-channel-overlay")) return;
@@ -678,9 +677,14 @@
       if (!link) return;
       const m = link.href.match(/\/@([^/?]+)/);
       if (!m) return;
-      const handle = m[1];
+      const entityId = getChannelEntityIdFromUrl(link.href);
+      if (!entityId) return;
 
-      const btn = createButton("channel", handle, "slop-btn--shorts-channel");
+      const btn = createButton(
+        "channel",
+        entityId,
+        "slop-btn--shorts-channel",
+      );
       nameSpan.insertAdjacentElement("afterend", btn);
     });
 
@@ -692,9 +696,13 @@
       legacyChannelEl.classList.add(INJECTED);
       const link = legacyChannelEl.querySelector("a[href]");
       if (link) {
-        const m = link.href.match(/\/@([^/?]+)/);
-        if (m) {
-          const btn = createButton("channel", m[1], "slop-btn--shorts-channel");
+        const entityId = getChannelEntityIdFromUrl(link.href);
+        if (entityId) {
+          const btn = createButton(
+            "channel",
+            entityId,
+            "slop-btn--shorts-channel",
+          );
           legacyChannelEl.parentElement.insertBefore(
             btn,
             legacyChannelEl.nextSibling,
@@ -713,13 +721,13 @@
       "h1.dynamic-text-view-model-wiz__h1, h1.dynamicTextViewModelH1",
     );
     if (!h1 || h1.classList.contains(INJECTED)) return;
-    const handle = getChannelHandleFromPage();
-    if (!handle) return;
+    const entityId = getChannelEntityIdFromPage();
+    if (!entityId) return;
 
     h1.classList.add(INJECTED);
     h1.style.display = "flex";
     h1.style.alignItems = "center";
-    const btn = createButton("channel", handle, "slop-btn--channel-page");
+    const btn = createButton("channel", entityId, "slop-btn--channel-page");
     h1.appendChild(btn);
   }
 
